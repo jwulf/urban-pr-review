@@ -16,6 +16,14 @@ interface In {
   summary?: string;
 }
 
+// The harness records the agent's full (byte-capped) stdout on the result
+// envelope; keep it for audit so a human can see what the agent did this round.
+const AGENT_RESULT_KEY = "io.nanobpm.agentResult";
+function transcriptOf(vars: Record<string, unknown>): string | undefined {
+  const env = vars[AGENT_RESULT_KEY] as { output?: unknown } | undefined;
+  return typeof env?.output === "string" ? env.output : undefined;
+}
+
 defineWorker({
   type: "pr.persist-round",
   async handle(job) {
@@ -24,6 +32,7 @@ defineWorker({
 
     await db.rounds.insert({
       pr_key: prKey, round_no: round, status, summary,
+      transcript: transcriptOf(job.variables as Record<string, unknown>) ?? null,
       started_at: now, ended_at: now,
     });
     await db.pull_requests.update(prKey, {

@@ -86,3 +86,34 @@ Return **one** of:
   a human must resolve. Their reply comes back to you as `answer` next round.
 
 Never guess on a `needs_input` decision — raise it and let a human answer.
+
+### How to return it (the wire mechanism)
+
+Your result variables only reach the process if you emit them through the harness's
+result channel. Prose in your normal output is **not** parsed — if you only "say"
+your status in the transcript, the round escalates with an empty question. So:
+
+1. **Write a JSON object to the file at `$AGENT_RESULT_FILE`** (an env var the
+   harness sets for you). The object's keys become process variables. Example for a
+   round that needs a human decision:
+
+   ```sh
+   printf '%s' '{"status":"needs_input","summary":"Resolved 3 nits; blocked on API shape","question":"Should getUser() throw or return null when the user is absent?"}' > "$AGENT_RESULT_FILE"
+   ```
+
+   Write this file **once**, at the very end, with your final result. Keep it a flat
+   JSON object of exactly the variables in the table above.
+
+2. **Fallback** (only if you truly cannot write the file): print a single line to
+   stdout of the form `::nano:result:: {json}` — e.g.
+
+   ```
+   ::nano:result:: {"status":"converged","summary":"No actionable comments left"}
+   ```
+
+   The harness reads the **last** such line. A trailing ```json fenced block is also
+   accepted as a last resort.
+
+Do not put the result file inside the repo checkout or `git add` it — it lives
+outside your workspace. Exit `0` for every status (including `blocked`/`needs_input`);
+a non-zero exit means a genuine crash and the job is retried.

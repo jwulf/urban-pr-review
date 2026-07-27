@@ -10,6 +10,12 @@ interface In {
   summary?: string;
 }
 
+const AGENT_RESULT_KEY = "io.nanobpm.agentResult";
+function transcriptOf(vars: Record<string, unknown>): string | undefined {
+  const env = vars[AGENT_RESULT_KEY] as { output?: unknown } | undefined;
+  return typeof env?.output === "string" ? env.output : undefined;
+}
+
 defineWorker({
   type: "pr.finalize",
   async handle(job) {
@@ -18,6 +24,7 @@ defineWorker({
 
     await db.rounds.insert({
       pr_key: prKey, round_no: round, status: "converged", summary,
+      transcript: transcriptOf(job.variables as Record<string, unknown>) ?? null,
       started_at: now, ended_at: now,
     });
     await db.pull_requests.update(prKey, {

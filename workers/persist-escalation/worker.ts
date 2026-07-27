@@ -15,6 +15,12 @@ interface In {
   question?: string;
 }
 
+const AGENT_RESULT_KEY = "io.nanobpm.agentResult";
+function transcriptOf(vars: Record<string, unknown>): string | undefined {
+  const env = vars[AGENT_RESULT_KEY] as { output?: unknown } | undefined;
+  return typeof env?.output === "string" ? env.output : undefined;
+}
+
 defineWorker({
   type: "pr.persist-escalation",
   async handle(job) {
@@ -22,14 +28,17 @@ defineWorker({
       job.variables as unknown as In;
     const kind = status === "needs_input" ? "question" : "blocker";
     const now = new Date().toISOString();
+    const transcript = transcriptOf(job.variables as Record<string, unknown>) ?? null;
 
     await db.rounds.insert({
       pr_key: prKey, round_no: round, status, summary,
+      transcript,
       started_at: now, ended_at: now,
     });
     const escalationId = await db.escalations.insert({
       pr_key: prKey, round_no: round, kind,
       question: question || "(no question provided)",
+      transcript,
       status: "open", asked_at: now,
     });
     await db.pull_requests.update(prKey, {
