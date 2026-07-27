@@ -16,7 +16,7 @@
     </bpmn:startEvent>
     <bpmn:serviceTask id="review-round" name="Review round (agent)">
       <bpmn:extensionElements>
-        <zeebe:taskDefinition type="pr-review.round" />
+        <zeebe:taskDefinition type="senior:pr-review" />
         <zeebe:properties>
           <zeebe:property name="io.nanobpm.dataEnvelope.in" value="PrReviewRoundIn" />
           <zeebe:property name="io.nanobpm.dataEnvelope.out" value="PrReviewRoundOut" />
@@ -141,8 +141,17 @@
           <dc:Bounds x="792" y="223" width="78" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="di_persist-escalation" bpmnElement="persist-escalation">
+        <dc:Bounds x="375" y="300" width="100" height="80" />
+      </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="di_persist-escalation-maxrounds" bpmnElement="persist-escalation-maxrounds">
         <dc:Bounds x="640" y="300" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="di_wait-answer" bpmnElement="wait-answer">
+        <dc:Bounds x="758" y="412" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="804" y="416" width="78" height="27" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="di_persist-converged" bpmnElement="persist-converged">
         <dc:Bounds x="520" y="60" width="100" height="80" />
@@ -151,15 +160,6 @@
         <dc:Bounds x="680" y="82" width="36" height="36" />
         <bpmndi:BPMNLabel>
           <dc:Bounds x="676" y="125" width="45" height="14" />
-        </bpmndi:BPMNLabel>
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_persist-escalation" bpmnElement="persist-escalation">
-        <dc:Bounds x="375" y="300" width="100" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_wait-answer" bpmnElement="wait-answer">
-        <dc:Bounds x="758" y="412" width="36" height="36" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="804" y="416" width="78" height="27" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="edge_f_start" bpmnElement="f_start">

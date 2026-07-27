@@ -5,7 +5,9 @@
   "name": "PR Review Convergence",
   "codename": "urban-pr-review",
   "models": {
-    "processes": ["resources/processes/*.bpmn"]
+    "processes": [
+      "resources/processes/*.bpmn"
+    ]
   },
   "data": {
     "default": "app",
@@ -18,8 +20,30 @@
     }
   },
   "workers": [
-    { "taskType": "pr.persist-round", "handler": "workers/persist-round/worker.ts" },
-    { "taskType": "pr.persist-escalation", "handler": "workers/persist-escalation/worker.ts" },
-    { "taskType": "pr.finalize", "handler": "workers/finalize/worker.ts" }
-  ]
+    {
+      "taskType": "pr.persist-round",
+      "handler": "workers/persist-round/worker.ts"
+    },
+    {
+      "taskType": "pr.persist-escalation",
+      "handler": "workers/persist-escalation/worker.ts"
+    },
+    {
+      "taskType": "pr.finalize",
+      "handler": "workers/finalize/worker.ts"
+    },
+    {
+      "taskType": "pr-review.round",
+      "inputType": "reviewConvergenceRequested"
+    }
+  ],
+  "types": {
+    "reviewConvergenceRequested": {
+      "fields": {
+        "value": {
+          "type": "string"
+        }
+      }
+    }
+  }
 }
