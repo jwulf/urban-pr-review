@@ -8,12 +8,13 @@
 //
 // Two client surfaces (see SPEC §"clients"):
 //   • @nanobpm/nano-sdk  — the ENGINE client (createProcessInstance, publishMessage)
-//   • @nanobpm/data      — the app's own sqlite datasource (pull_requests/rounds/escalations)
+//   • @nanobpm/domain    — the app's own sqlite datasource as a typed data object
+//                          (db.pull_requests/db.rounds/db.escalations, db.raw escape hatch)
 import { deployAllResources, startLlmWorkers, startWorkers } from "@lib/nano.ts";
 import { createCamundaClient } from "@nanobpm/nano-sdk";
-import { openDataSource } from "@nanobpm/data";
+import { openDomain } from "@nanobpm/domain";
 
-const PORT = Number(Deno.env.get("PORT") ?? 8090);
+const PORT = Number(Deno.env.get("PR_REVIEW_PORT") ?? 3000);
 const POLL_MS = Number(Deno.env.get("NANO_PR_POLL_MS") ?? 60_000);
 const MAX_ROUNDS = Number(Deno.env.get("NANO_PR_MAX_ROUNDS") ?? 10);
 const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") ?? "";
@@ -21,7 +22,7 @@ const WEBHOOK_SECRET = Deno.env.get("NANO_PR_WEBHOOK_SECRET") ?? "";
 const PROCESS_ID = "convergence-loop";
 
 const nano = createCamundaClient();
-const db = await openDataSource();
+const db = await openDomain("app");
 
 // ── boot ───────────────────────────────────────────────────────────────────
 await deployAllResources();
@@ -62,44 +63,44 @@ function parsePr(input: string): { repo: string; number: number; url: string; pr
 
 /** Register a PR row (if new) and start the convergence process. Idempotent on prKey. */
 async function submitPr(repo: string, number: number, url: string, prKey: string) {
-  const existing = await db.query("SELECT status FROM pull_requests WHERE pr_key = ?", [prKey]);
-  if (existing.length && !["converged", "abandoned"].includes(String(existing[0].status))) {
+  const existing = await db.pull_requests.get(prKey);
+  if (existing && !["converged", "abandoned"].includes(existing.status)) {
     return { prKey, alreadyRunning: true };
   }
   const ts = now();
-  await db.exec(
-    `INSERT INTO pull_requests (pr_key, repo, number, url, status, current_round, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'converging', 1, ?, ?)
-     ON CONFLICT(pr_key) DO UPDATE SET
-       status='converging', current_round=1, url=excluded.url,
-       waiting_since=NULL, last_review_id=NULL, outcome=NULL, converged_at=NULL, updated_at=excluded.updated_at`,
-    [prKey, repo, number, url, ts, ts],
-  );
+  if (existing) {
+    // Re-open a previously converged/abandoned PR for a fresh convergence run.
+    await db.pull_requests.update(prKey, {
+      status: "converging", current_round: 1, url,
+      waiting_since: null, last_review_id: null, outcome: null, converged_at: null,
+      updated_at: ts,
+    });
+  } else {
+    await db.pull_requests.insert({
+      pr_key: prKey, repo, number, url, status: "converging", current_round: 1,
+      created_at: ts, updated_at: ts,
+    });
+  }
   const res = await nano.createProcessInstance({
     processDefinitionId: PROCESS_ID,
     variables: { repo, prNumber: number, prUrl: url, prKey, round: 1, maxRounds: MAX_ROUNDS, prompt: REVIEW_PROMPT },
   } as unknown as Parameters<typeof nano.createProcessInstance>[0]);
   const processKey = (res as { processInstanceKey?: string | number }).processInstanceKey;
   if (processKey != null) {
-    await db.exec("UPDATE pull_requests SET process_key = ? WHERE pr_key = ?", [String(processKey), prKey]);
+    await db.pull_requests.update(prKey, { process_key: String(processKey) });
   }
   return { prKey, processKey };
 }
 
 /** Answer an open escalation → record it and resume the process. */
 async function answerEscalation(prKey: string, answer: string) {
-  const open = await db.query(
-    "SELECT id FROM escalations WHERE pr_key = ? AND status = 'open' ORDER BY id DESC LIMIT 1",
-    [prKey],
-  );
-  if (!open.length) return { ok: false, reason: "no open escalation" };
-  const escalationId = Number(open[0].id);
+  const open = (await db.escalations.find({ pr_key: prKey, status: "open" }))
+    .sort((a, b) => b.id - a.id)[0];
+  if (!open) return { ok: false, reason: "no open escalation" };
+  const escalationId = open.id;
   const ts = now();
-  await db.exec(
-    "UPDATE escalations SET answer = ?, status = 'answered', answered_at = ? WHERE id = ?",
-    [answer, ts, escalationId],
-  );
-  await db.exec("UPDATE pull_requests SET status = 'converging', updated_at = ? WHERE pr_key = ?", [ts, prKey]);
+  await db.escalations.update(escalationId, { answer, status: "answered", answered_at: ts });
+  await db.pull_requests.update(prKey, { status: "converging", updated_at: ts });
   await nano.publishMessage({
     name: "escalation-answered",
     correlationKey: prKey,
@@ -113,12 +114,16 @@ async function listPrs(scope: "active" | "history") {
   const cond = scope === "history"
     ? "status IN ('converged','abandoned')"
     : "status NOT IN ('converged','abandoned')";
-  const prs = await db.query(`SELECT * FROM pull_requests WHERE ${cond} ORDER BY updated_at DESC`);
+  // A set-valued, ordered query the record gateway doesn't express → the
+  // sanctioned `db.raw` escape hatch (typed record ops are used everywhere else).
+  const prs = await db.raw.query(`SELECT * FROM pull_requests WHERE ${cond} ORDER BY updated_at DESC`);
   const out = [];
   for (const pr of prs) {
     const prKey = String(pr.pr_key);
-    const rounds = await db.query("SELECT * FROM rounds WHERE pr_key = ? ORDER BY round_no, id", [prKey]);
-    const escalations = await db.query("SELECT * FROM escalations WHERE pr_key = ? ORDER BY id", [prKey]);
+    const rounds = (await db.rounds.find({ pr_key: prKey }))
+      .sort((a, b) => a.round_no - b.round_no || a.id - b.id);
+    const escalations = (await db.escalations.find({ pr_key: prKey }))
+      .sort((a, b) => a.id - b.id);
     out.push({ ...pr, rounds, escalations, openEscalation: escalations.find((e) => e.status === "open") ?? null });
   }
   return out;
@@ -127,14 +132,12 @@ async function listPrs(scope: "active" | "history") {
 // ── review-ready poller (SPEC §10) ────────────────────────────────────────────
 async function pollOnce() {
   if (!GITHUB_TOKEN) return; // no token → poller idles (webhook/manual still work)
-  const waiting = await db.query(
-    "SELECT pr_key, repo, number, waiting_since, last_review_id FROM pull_requests WHERE status = 'waiting_review'",
-  );
+  const waiting = await db.pull_requests.find({ status: "waiting_review" });
   for (const pr of waiting) {
-    const repo = String(pr.repo);
-    const number = Number(pr.number);
-    const prKey = String(pr.pr_key);
-    const lastId = Number(pr.last_review_id ?? 0);
+    const repo = pr.repo;
+    const number = pr.number;
+    const prKey = pr.pr_key;
+    const lastId = pr.last_review_id ?? 0;
     try {
       const r = await fetch(`https://api.github.com/repos/${repo}/pulls/${number}/reviews?per_page=100`, {
         headers: { authorization: `Bearer ${GITHUB_TOKEN}`, accept: "application/vnd.github+json" },
@@ -142,14 +145,13 @@ async function pollOnce() {
       if (!r.ok) continue;
       const reviews = (await r.json()) as Array<{ id: number; state: string; submitted_at?: string }>;
       const fresh = reviews
-        .filter((rv) => rv.id > lastId && rv.submitted_at && (!pr.waiting_since || rv.submitted_at >= String(pr.waiting_since)))
+        .filter((rv) => rv.id > lastId && rv.submitted_at && (!pr.waiting_since || rv.submitted_at >= pr.waiting_since))
         .sort((a, b) => a.id - b.id)
         .pop();
       if (!fresh) continue;
-      await db.exec(
-        "UPDATE pull_requests SET last_review_id = ?, status = 'converging', updated_at = ? WHERE pr_key = ?",
-        [fresh.id, now(), prKey],
-      );
+      await db.pull_requests.update(prKey, {
+        last_review_id: fresh.id, status: "converging", updated_at: now(),
+      });
       await nano.publishMessage({
         name: "review-ready",
         correlationKey: prKey,

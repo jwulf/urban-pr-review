@@ -1,5 +1,8 @@
 // pr.finalize — the PR has converged. Record the final round and close the PR out.
 import { defineWorker } from "@nanobpm/worker";
+import { openDomain } from "@nanobpm/domain";
+
+const db = await openDomain("app");
 
 interface In {
   prKey: string;
@@ -7,28 +10,20 @@ interface In {
   summary?: string;
 }
 
-defineWorker<In>({
+defineWorker({
   type: "pr.finalize",
-  async handle(job, ctx) {
-    const { prKey, round, summary = "" } = job.variables;
+  async handle(job) {
+    const { prKey, round, summary = "" } = job.variables as unknown as In;
     const now = new Date().toISOString();
-    const db = await ctx.data("app");
 
-    await db.exec(
-      `INSERT INTO rounds (pr_key, round_no, status, summary, started_at, ended_at)
-       VALUES (?, ?, 'converged', ?, ?, ?)`,
-      [prKey, round, summary, now, now],
-    );
-    await db.exec(
-      `UPDATE pull_requests
-         SET status = 'converged',
-             current_round = ?,
-             outcome = ?,
-             converged_at = ?,
-             updated_at = ?
-       WHERE pr_key = ?`,
-      [round, summary, now, now, prKey],
-    );
+    await db.rounds.insert({
+      pr_key: prKey, round_no: round, status: "converged", summary,
+      started_at: now, ended_at: now,
+    });
+    await db.pull_requests.update(prKey, {
+      status: "converged", current_round: round,
+      outcome: summary, converged_at: now, updated_at: now,
+    });
 
     return {};
   },

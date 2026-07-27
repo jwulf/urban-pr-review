@@ -1,4 +1,7 @@
 {
+  "compilerOptions": {
+    "lib": ["deno.window", "deno.ns"]
+  },
   "imports": {
     "@nanobpm/nano-sdk": "npm:@nanobpm/nano-sdk@^1",
     "@nanobpm/worker": "./nano-generated/workers.ts",

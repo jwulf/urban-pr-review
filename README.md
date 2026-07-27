@@ -53,9 +53,13 @@ See [`SPEC.md`](./SPEC.md) for the full design.
 
 - **`@nanobpm/nano-sdk`** — the **engine** client (`createProcessInstance`,
   `publishMessage`).
-- **`@nanobpm/data`** — the app's **own** sqlite datasource.
+- **`@nanobpm/domain`** — the app's **own** sqlite datasource as a typed domain
+  object: `const db = await openDomain("app")` gives typed table accessors
+  (`db.pull_requests`, `db.rounds`, `db.escalations`) with `insert`/`get`/`find`/
+  `update`/`delete`, plus `db.raw` as the escape hatch for set/ordered SQL.
 
-Workers use **`@nanobpm/worker`** (`defineWorker` + `ctx.data("app")`).
+Workers use **`@nanobpm/worker`** (`defineWorker`) and open the same typed domain
+with `openDomain("app")`.
 
 ## Configuration
 

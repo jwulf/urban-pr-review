@@ -3,6 +3,9 @@
 // (status = needs_input | blocked) and the MAX_ROUNDS guard (status = blocked,
 // question set by the process). Returns `escalationId` for the UI.
 import { defineWorker } from "@nanobpm/worker";
+import { openDomain } from "@nanobpm/domain";
+
+const db = await openDomain("app");
 
 interface In {
   prKey: string;
@@ -12,32 +15,27 @@ interface In {
   question?: string;
 }
 
-defineWorker<In>({
+defineWorker({
   type: "pr.persist-escalation",
-  async handle(job, ctx) {
+  async handle(job) {
     const { prKey, round, status = "needs_input", summary = "", question = "" } =
-      job.variables;
+      job.variables as unknown as In;
     const kind = status === "needs_input" ? "question" : "blocker";
     const now = new Date().toISOString();
-    const db = await ctx.data("app");
 
-    await db.exec(
-      `INSERT INTO rounds (pr_key, round_no, status, summary, started_at, ended_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [prKey, round, status, summary, now, now],
-    );
-    const res = await db.exec(
-      `INSERT INTO escalations (pr_key, round_no, kind, question, status, asked_at)
-       VALUES (?, ?, ?, ?, 'open', ?)`,
-      [prKey, round, kind, question || "(no question provided)", now],
-    );
-    await db.exec(
-      `UPDATE pull_requests
-         SET status = 'escalated', current_round = ?, updated_at = ?
-       WHERE pr_key = ?`,
-      [round, now, prKey],
-    );
+    await db.rounds.insert({
+      pr_key: prKey, round_no: round, status, summary,
+      started_at: now, ended_at: now,
+    });
+    const escalationId = await db.escalations.insert({
+      pr_key: prKey, round_no: round, kind,
+      question: question || "(no question provided)",
+      status: "open", asked_at: now,
+    });
+    await db.pull_requests.update(prKey, {
+      status: "escalated", current_round: round, updated_at: now,
+    });
 
-    return { escalationId: Number(res.lastInsertId ?? 0) };
+    return { escalationId: Number(escalationId) };
   },
 });

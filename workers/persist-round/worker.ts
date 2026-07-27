@@ -1,6 +1,13 @@
 // pr.persist-round — records an "addressed" round and parks the PR in
 // `waiting_review` so the poller starts watching for the next review.
+//
+// Data access goes through the typed data object (`@nanobpm/domain`, the RAD
+// "TTable") — `db.rounds.insert(...)` / `db.pull_requests.update(...)`, not
+// hand-written SQL. Row shapes come from the generated `domain-rows.d.ts`.
 import { defineWorker } from "@nanobpm/worker";
+import { openDomain } from "@nanobpm/domain";
+
+const db = await openDomain("app");
 
 interface In {
   prKey: string;
@@ -9,27 +16,20 @@ interface In {
   summary?: string;
 }
 
-defineWorker<In>({
+defineWorker({
   type: "pr.persist-round",
-  async handle(job, ctx) {
-    const { prKey, round, status = "addressed", summary = "" } = job.variables;
+  async handle(job) {
+    const { prKey, round, status = "addressed", summary = "" } = job.variables as unknown as In;
     const now = new Date().toISOString();
-    const db = await ctx.data("app");
 
-    await db.exec(
-      `INSERT INTO rounds (pr_key, round_no, status, summary, started_at, ended_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [prKey, round, status, summary, now, now],
-    );
-    await db.exec(
-      `UPDATE pull_requests
-         SET status = 'waiting_review',
-             current_round = ?,
-             waiting_since = ?,
-             updated_at = ?
-       WHERE pr_key = ?`,
-      [round, now, now, prKey],
-    );
+    await db.rounds.insert({
+      pr_key: prKey, round_no: round, status, summary,
+      started_at: now, ended_at: now,
+    });
+    await db.pull_requests.update(prKey, {
+      status: "waiting_review", current_round: round,
+      waiting_since: now, updated_at: now,
+    });
 
     return {};
   },
