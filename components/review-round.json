@@ -1,0 +1,69 @@
+{
+  "$schema": "https://unpkg.com/@camunda/zeebe-element-templates-json-schema@0.44.0/resources/schema.json",
+  "id": "io.nanobpm.urban.pr-review-round",
+  "name": "PR Review Round (agent)",
+  "description": "One decoupled review round serviced by an external agent (e.g. a Copilot instance via `c8ctl nano work`). The agent reads the latest review, addresses it, pushes, re-requests review, and returns a structured status.",
+  "appliesTo": ["bpmn:Task"],
+  "elementType": { "value": "bpmn:ServiceTask" },
+  "properties": [
+    {
+      "type": "Hidden",
+      "value": "pr-review.round",
+      "binding": { "type": "zeebe:taskDefinition:type" }
+    },
+    {
+      "label": "Input data-envelope type",
+      "type": "Hidden",
+      "value": "PrReviewRoundIn",
+      "binding": { "type": "zeebe:property", "name": "io.nanobpm.dataEnvelope.in" }
+    },
+    {
+      "label": "Output data-envelope type",
+      "type": "Hidden",
+      "value": "PrReviewRoundOut",
+      "binding": { "type": "zeebe:property", "name": "io.nanobpm.dataEnvelope.out" }
+    },
+    {
+      "label": "PR URL",
+      "type": "String",
+      "feel": "optional",
+      "value": "=prUrl",
+      "binding": { "type": "zeebe:input", "name": "prUrl" }
+    },
+    {
+      "label": "Repo (owner/name)",
+      "type": "String",
+      "feel": "optional",
+      "value": "=repo",
+      "binding": { "type": "zeebe:input", "name": "repo" }
+    },
+    {
+      "label": "PR number",
+      "type": "String",
+      "feel": "optional",
+      "value": "=prNumber",
+      "binding": { "type": "zeebe:input", "name": "prNumber" }
+    },
+    {
+      "label": "Round",
+      "type": "String",
+      "feel": "optional",
+      "value": "=round",
+      "binding": { "type": "zeebe:input", "name": "round" }
+    },
+    {
+      "label": "Prompt (instructions)",
+      "type": "String",
+      "feel": "optional",
+      "value": "=prompt",
+      "binding": { "type": "zeebe:input", "name": "prompt" }
+    },
+    {
+      "label": "Answer (on escalation resume)",
+      "type": "String",
+      "feel": "optional",
+      "value": "=answer",
+      "binding": { "type": "zeebe:input", "name": "answer" }
+    }
+  ]
+}

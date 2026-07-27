@@ -1,0 +1,14 @@
+{
+  "imports": {
+    "@nanobpm/nano-sdk": "npm:@nanobpm/nano-sdk@^1",
+    "@nanobpm/worker": "./nano-generated/workers.ts",
+    "@nanobpm/messages": "./nano-generated/messages.ts",
+    "@nanobpm/llm": "./nano-generated/llm-worker.ts",
+    "@nanobpm/data": "./nano-generated/data-sdk.ts",
+    "@nanobpm/domain": "./nano-generated/domain.ts",
+    "@lib/": "./lib/"
+  },
+  "tasks": {
+    "start": "deno run --allow-net --allow-read --allow-write --allow-env main.ts"
+  }
+}

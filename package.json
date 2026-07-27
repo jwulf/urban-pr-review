@@ -1,0 +1,13 @@
+{
+  "name": "urban-pr-review",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "main.ts",
+  "scripts": {
+    "start": "deno task start"
+  },
+  "devDependencies": {
+    "@types/node": "^22"
+  }
+}

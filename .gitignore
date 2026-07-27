@@ -1,0 +1,13 @@
+# Generated Nano SDK facades (materialised by the tooling at run/generate time).
+/nano-generated
+nano-generated/
+
+# Runtime data
+app.db
+app.db-*
+*.sqlite
+*.sqlite-*
+
+# Deps / build
+node_modules/
+dist/

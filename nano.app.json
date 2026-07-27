@@ -1,0 +1,25 @@
+{
+  "$schema": "https://nanobpm.io/spec-app/nano-app.schema.json",
+  "schemaVersion": 1,
+  "id": "urban-pr-review",
+  "name": "PR Review Convergence",
+  "codename": "urban-pr-review",
+  "models": {
+    "processes": ["resources/processes/*.bpmn"]
+  },
+  "data": {
+    "default": "app",
+    "sources": {
+      "app": {
+        "driver": "sqlite",
+        "url": "${NANO_APP_DB_URL:-file:./app.db}",
+        "migrations": "db/migrations"
+      }
+    }
+  },
+  "workers": [
+    { "taskType": "pr.persist-round", "handler": "workers/persist-round/worker.ts" },
+    { "taskType": "pr.persist-escalation", "handler": "workers/persist-escalation/worker.ts" },
+    { "taskType": "pr.finalize", "handler": "workers/finalize/worker.ts" }
+  ]
+}

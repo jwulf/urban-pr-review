@@ -1,0 +1,51 @@
+{
+  "version": "5",
+  "specifiers": {
+    "npm:@nanobpm/nano-sdk@1": "1.2.0",
+    "npm:@types/node@22": "22.20.1"
+  },
+  "npm": {
+    "@camunda8/orchestration-cluster-api@10.0.0-alpha.13": {
+      "integrity": "sha512-cc67Vw23lKc2XxR7c5ZvVeCkIjyZ/rx+7Fk3DqHobcXulSWRyrbcbINL8ICUoOk1GgZpXI86cs+oO7WXF24nXA==",
+      "dependencies": [
+        "typed-env",
+        "zod"
+      ]
+    },
+    "@nanobpm/nano-sdk@1.2.0": {
+      "integrity": "sha512-hNQxwlhsgiHYMaY5Vv1GdcZ6RqTrRZ6yKiYgBLlFXUPTqoTmLPAncY5hyIOKlb1iPvxEbOAdnawOq6hm8afSmA==",
+      "dependencies": [
+        "@camunda8/orchestration-cluster-api",
+        "ws"
+      ]
+    },
+    "@types/node@22.20.1": {
+      "integrity": "sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==",
+      "dependencies": [
+        "undici-types"
+      ]
+    },
+    "typed-env@2.0.0": {
+      "integrity": "sha512-9nP+7+pctDlpFNKS4nkXPVkCOdAj7Ax8QeHhQkQ0hEGzsJ5ClgfhjwGN89q6s/EukHqyq9rDRzZ2yctCIEJGxA=="
+    },
+    "undici-types@6.21.0": {
+      "integrity": "sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ=="
+    },
+    "ws@8.21.0": {
+      "integrity": "sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g=="
+    },
+    "zod@4.4.3": {
+      "integrity": "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="
+    }
+  },
+  "workspace": {
+    "dependencies": [
+      "npm:@nanobpm/nano-sdk@1"
+    ],
+    "packageJson": {
+      "dependencies": [
+        "npm:@types/node@22"
+      ]
+    }
+  }
+}

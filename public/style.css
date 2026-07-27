@@ -1,0 +1,135 @@
+:root {
+  --bg: #0d1117;
+  --panel: #161b22;
+  --panel-2: #1c232c;
+  --border: #30363d;
+  --fg: #e6edf3;
+  --muted: #8b949e;
+  --accent: #2f81f7;
+  --green: #3fb950;
+  --amber: #d29922;
+  --red: #f85149;
+  --purple: #a371f7;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 2rem 1.25rem 4rem;
+}
+
+header h1 { margin: 0 0 .25rem; font-size: 1.5rem; }
+header .sub { margin: 0 0 1.5rem; color: var(--muted); }
+
+.submit form { display: flex; gap: .5rem; }
+.submit input {
+  flex: 1;
+  padding: .55rem .7rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font: inherit;
+}
+button {
+  padding: .55rem .9rem;
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  cursor: pointer;
+}
+button:disabled { opacity: .6; cursor: default; }
+.msg { min-height: 1.2em; color: var(--muted); margin: .4rem 0 0; font-size: .85rem; }
+
+.tabs { display: flex; gap: .25rem; margin: 1.5rem 0 .75rem; border-bottom: 1px solid var(--border); }
+.tab {
+  background: transparent;
+  color: var(--muted);
+  border-radius: 6px 6px 0 0;
+  padding: .45rem .85rem;
+}
+.tab.active { color: var(--fg); border-bottom: 2px solid var(--accent); }
+
+.list { display: flex; flex-direction: column; gap: .6rem; }
+.empty { color: var(--muted); text-align: center; padding: 2rem; }
+.empty.error { color: var(--red); }
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.card.status-escalated { border-color: var(--amber); }
+.card.status-converged { border-color: var(--green); }
+.card summary {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  flex-wrap: wrap;
+  padding: .7rem .9rem;
+  cursor: pointer;
+  list-style: none;
+}
+.card summary::-webkit-details-marker { display: none; }
+.pr-key { font-weight: 600; font-family: ui-monospace, SFMono-Regular, monospace; }
+.pr-title { color: var(--muted); font-size: .9rem; }
+.round-count { color: var(--muted); font-size: .8rem; margin-left: auto; }
+
+.badge { font-size: .72rem; padding: .12rem .5rem; border-radius: 999px; border: 1px solid var(--border); }
+.b-converging { color: var(--accent); border-color: var(--accent); }
+.b-waiting_review { color: var(--purple); border-color: var(--purple); }
+.b-escalated { color: var(--amber); border-color: var(--amber); }
+.b-converged { color: var(--green); border-color: var(--green); }
+.b-abandoned { color: var(--muted); }
+
+.card-body { padding: 0 .9rem .9rem; border-top: 1px solid var(--border); }
+.pr-link { display: inline-block; margin: .6rem 0; color: var(--accent); font-size: .85rem; word-break: break-all; }
+.outcome { margin: .5rem 0; padding: .5rem .7rem; background: var(--panel-2); border-radius: 6px; }
+
+.rounds { list-style: none; margin: .5rem 0 0; padding: 0; }
+.round {
+  display: grid;
+  grid-template-columns: 3rem 6.5rem 1fr;
+  gap: .5rem;
+  padding: .35rem 0;
+  border-top: 1px dashed var(--border);
+  font-size: .88rem;
+}
+.round .rn { color: var(--muted); }
+.round-converged .rs { color: var(--green); }
+.round-addressed .rs { color: var(--accent); }
+.round-needs_input .rs, .round-blocked .rs { color: var(--amber); }
+.rsum { color: var(--fg); }
+
+.escalation {
+  margin: .6rem 0;
+  padding: .7rem .8rem;
+  background: rgba(210, 153, 34, .08);
+  border: 1px solid var(--amber);
+  border-radius: 6px;
+}
+.esc-head { font-weight: 600; margin-bottom: .3rem; }
+.esc-q { white-space: pre-wrap; margin-bottom: .5rem; }
+.answer-form { display: flex; flex-direction: column; gap: .5rem; }
+.answer-form textarea {
+  min-height: 3.5rem;
+  padding: .5rem;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--fg);
+  font: inherit;
+  resize: vertical;
+}
+.answer-form button { align-self: flex-start; background: var(--amber); }
+
+footer { margin-top: 2rem; color: var(--muted); font-size: .8rem; text-align: center; }
