@@ -33,7 +33,7 @@ surface are proposed and open for adjustment.
             │  convergence-loop │◀───────────────────────────────│  poller  │
             │      (BPMN)       │        escalation-answered (msg)└────┬─────┘
             └─────────┬─────────┘◀───────────────┐                    │ polls
-                      │ pr-review.round job       │ answer POST        │ GitHub
+                      │ senior:pr-review job      │ answer POST        │ GitHub
                       ▼                           │                    ▼
             ┌───────────────────┐          ┌──────┴───────┐     ┌────────────┐
             │  decoupled agent  │          │   web UI +   │     │   SQLite   │
@@ -42,7 +42,7 @@ surface are proposed and open for adjustment.
 ```
 
 - **Engine**: embedded Nano (the Urban app deploys its BPMN + runs the loop).
-- **Agent**: external worker subscribed to `pr-review.round`. Short jobs — one
+- **Agent**: external worker subscribed to `senior:pr-review`. Short jobs — one
   round then return. It never blocks on the wait.
 - **BPMN owns the durable wait** between rounds (message catch events), so
   agent worker slots and job timeouts are never held hostage to Copilot's reply
@@ -71,7 +71,7 @@ urban-pr-review/
   prompts/
     review-round.md           # agent instructions asset (injected into job data)
   components/
-    review-round.json         # Zeebe element template for the pr-review.round service task
+    review-round.json         # Zeebe element template for the senior:pr-review service task
   SPEC.md                     # this document
   README.md
 ```
@@ -88,7 +88,7 @@ known at submit time, carried as a process variable and stored on the DB row.
 [Register PR & load prompt]  (script/handler)   → insert DB row; read prompts/review-round.md
       │                                            set prompt, round = 1
       ▼
-┌──▶ [Review round]  (service task, taskType: pr-review.round)
+┌──▶ [Review round]  (service task, taskType: senior:pr-review)
 │         in : prUrl, repo, prNumber, prompt, round, answer?
 │         out: status, summary, question?
 │         │
@@ -123,7 +123,7 @@ Notes:
 - On `needs_input`, the same `round` is retried after the answer (the answer is
   added to the agent's context; the round number does not advance).
 
-## 5. Agent job contract (`pr-review.round`)
+## 5. Agent job contract (`senior:pr-review`)
 
 **Input** (`job.variables`):
 | var | type | notes |

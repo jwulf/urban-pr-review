@@ -8,7 +8,7 @@
   "properties": [
     {
       "type": "Hidden",
-      "value": "pr-review.round",
+      "value": "senior:pr-review",
       "binding": { "type": "zeebe:taskDefinition:type" }
     },
     {

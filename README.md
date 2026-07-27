@@ -5,7 +5,7 @@ an automated reviewer (e.g. GitHub Copilot's PR review), one durable, multi-roun
 loop per PR.
 
 The reviewer-agent is **decoupled**: from this app's point of view it is just a
-BPMN service task (`pr-review.round`) with a job payload. Whether a Copilot
+BPMN service task (`senior:pr-review`) with a job payload. Whether a Copilot
 instance (via `c8ctl nano recruit`/`work`), a script, or anything else services
 that job is the worker's concern — this app never names it.
 
@@ -18,7 +18,7 @@ See [`SPEC.md`](./SPEC.md) for the full design.
                                                         │
                           ┌── converged ──► finalize ──► done
    Review round (agent) ──┼── addressed ──► record ──► wait review-ready ─┐
-   taskType pr-review.round└── needs_input/blocked ─► escalate ─► wait ───┤
+   taskType senior:pr-review└── needs_input/blocked ─► escalate ─► wait ───┤
         ▲                                             escalation-answered │
         └─────────────────────── loop ───────────────────────────────────┘
 
@@ -97,8 +97,8 @@ curl -XPOST localhost:8090/hooks/submit -H 'x-hook-secret: $SECRET' \
 
 ## The agent (external worker)
 
-The `pr-review.round` task is serviced by an external worker — it is **not** in
+The `senior:pr-review` task is serviced by an external worker — it is **not** in
 the manifest `workers[]`. Point a `c8ctl nano work` daemon (or any Zeebe-style
-worker) at task type `pr-review.round`; each job carries `{prUrl, repo, prNumber,
+worker) at task type `senior:pr-review`; each job carries `{prUrl, repo, prNumber,
 round, answer?, prompt}` and expects `{status, summary, question?}` back. The
 `prompt` is the full text of `prompts/review-round.md`.

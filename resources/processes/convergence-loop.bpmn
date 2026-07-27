@@ -3,11 +3,17 @@
   <bpmn:message id="Message_reviewReady" name="review-ready">
     <bpmn:extensionElements>
       <zeebe:subscription correlationKey="=prKey" />
+      <zeebe:properties>
+        <zeebe:property name="io.nanobpm.dataEnvelope.in" value="ReviewReady" />
+      </zeebe:properties>
     </bpmn:extensionElements>
   </bpmn:message>
   <bpmn:message id="Message_escalationAnswered" name="escalation-answered">
     <bpmn:extensionElements>
       <zeebe:subscription correlationKey="=prKey" />
+      <zeebe:properties>
+        <zeebe:property name="io.nanobpm.dataEnvelope.in" value="EscalationAnswered" />
+      </zeebe:properties>
     </bpmn:extensionElements>
   </bpmn:message>
   <bpmn:process id="convergence-loop" name="PR Review Convergence" isExecutable="true">
@@ -41,6 +47,9 @@
     <bpmn:serviceTask id="persist-round" name="Record round">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="pr.persist-round" />
+        <zeebe:properties>
+          <zeebe:property name="io.nanobpm.dataEnvelope.in" value="PrPersistRoundIn" />
+        </zeebe:properties>
       </bpmn:extensionElements>
       <bpmn:incoming>f_guardOk</bpmn:incoming>
       <bpmn:outgoing>f_roundWait</bpmn:outgoing>
@@ -58,6 +67,10 @@
     <bpmn:serviceTask id="persist-escalation" name="Record escalation">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="pr.persist-escalation" />
+        <zeebe:properties>
+          <zeebe:property name="io.nanobpm.dataEnvelope.in" value="PrPersistEscalationIn" />
+          <zeebe:property name="io.nanobpm.dataEnvelope.out" value="PrPersistEscalationOut" />
+        </zeebe:properties>
       </bpmn:extensionElements>
       <bpmn:incoming>f_escalate</bpmn:incoming>
       <bpmn:outgoing>f_escWait</bpmn:outgoing>
@@ -65,6 +78,10 @@
     <bpmn:serviceTask id="persist-escalation-maxrounds" name="Escalate: max rounds">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="pr.persist-escalation" />
+        <zeebe:properties>
+          <zeebe:property name="io.nanobpm.dataEnvelope.in" value="PrPersistEscalationIn" />
+          <zeebe:property name="io.nanobpm.dataEnvelope.out" value="PrPersistEscalationOut" />
+        </zeebe:properties>
         <zeebe:ioMapping>
           <zeebe:input source="=&#34;blocked&#34;" target="status" />
           <zeebe:input source="=&#34;Not converged after &#34; + string(maxRounds) + &#34; rounds. A human must decide how to proceed.&#34;" target="question" />
@@ -82,6 +99,9 @@
     <bpmn:serviceTask id="persist-converged" name="Mark converged">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="pr.finalize" />
+        <zeebe:properties>
+          <zeebe:property name="io.nanobpm.dataEnvelope.in" value="PrFinalizeIn" />
+        </zeebe:properties>
       </bpmn:extensionElements>
       <bpmn:incoming>f_converged</bpmn:incoming>
       <bpmn:outgoing>f_finalize</bpmn:outgoing>
