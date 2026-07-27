@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_urban_pr_review" targetNamespace="http://nanobpm.io/urban-pr-review">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:nano="https://nanobpm.io/schema/shapes/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_urban_pr_review" targetNamespace="http://nanobpm.io/urban-pr-review">
   <bpmn:message id="Message_reviewReady" name="review-ready">
     <bpmn:extensionElements>
       <zeebe:subscription correlationKey="=prKey" />
@@ -17,6 +17,53 @@
     </bpmn:extensionElements>
   </bpmn:message>
   <bpmn:process id="convergence-loop" name="PR Review Convergence" isExecutable="true">
+    <bpmn:extensionElements>
+      <nano:shapes>
+        <nano:shape id="PrReviewRoundIn" name="PR review round — input">
+          <nano:extend name="prUrl" type="string" />
+          <nano:extend name="repo" type="string" />
+          <nano:extend name="prNumber" type="integer" />
+          <nano:extend name="prompt" type="string" />
+          <nano:extend name="round" type="integer" />
+          <nano:extend name="answer" type="string" optional="true" />
+        </nano:shape>
+        <nano:shape id="PrReviewRoundOut" name="PR review round — result">
+          <nano:extend name="status" type="string" />
+          <nano:extend name="summary" type="string" />
+          <nano:extend name="question" type="string" optional="true" />
+        </nano:shape>
+        <nano:shape id="PrPersistRoundIn" name="Record round — input">
+          <nano:extend name="prKey" type="string" />
+          <nano:extend name="round" type="integer" />
+          <nano:extend name="status" type="string" optional="true" />
+          <nano:extend name="summary" type="string" optional="true" />
+        </nano:shape>
+        <nano:shape id="PrPersistEscalationIn" name="Record escalation — input">
+          <nano:extend name="prKey" type="string" />
+          <nano:extend name="round" type="integer" />
+          <nano:extend name="status" type="string" optional="true" />
+          <nano:extend name="summary" type="string" optional="true" />
+          <nano:extend name="question" type="string" optional="true" />
+        </nano:shape>
+        <nano:shape id="PrPersistEscalationOut" name="Record escalation — result">
+          <nano:extend name="escalationId" type="integer" />
+        </nano:shape>
+        <nano:shape id="PrFinalizeIn" name="Mark converged — input">
+          <nano:extend name="prKey" type="string" />
+          <nano:extend name="round" type="integer" />
+          <nano:extend name="summary" type="string" optional="true" />
+        </nano:shape>
+        <nano:shape id="ReviewReady" name="review-ready message payload">
+          <nano:extend name="reviewId" type="integer" />
+          <nano:extend name="reviewState" type="string" />
+          <nano:extend name="submittedAt" type="datetime" optional="true" />
+        </nano:shape>
+        <nano:shape id="EscalationAnswered" name="escalation-answered message payload">
+          <nano:extend name="answer" type="string" />
+          <nano:extend name="escalationId" type="integer" />
+        </nano:shape>
+      </nano:shapes>
+    </bpmn:extensionElements>
     <bpmn:startEvent id="Start" name="PR submitted">
       <bpmn:outgoing>f_start</bpmn:outgoing>
     </bpmn:startEvent>
