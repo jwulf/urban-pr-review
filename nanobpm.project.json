@@ -1,0 +1,20 @@
+{
+  "name": "urban-pr-review",
+  "description": "Durable, multi-round GitHub PR convergence orchestrated by Nano.",
+  "main": "main.ts",
+  "lang": "deno",
+  "app": "urban",
+  "autoDeploy": [],
+  "toolchain": {
+    "run": [
+      "deno",
+      "run",
+      "--allow-net",
+      "--allow-read",
+      "--allow-write",
+      "--allow-env",
+      "main.ts"
+    ],
+    "compile": []
+  }
+}
