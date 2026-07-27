@@ -145,6 +145,25 @@ Notes:
 The agent is responsible, within a round, for: reading the latest review,
 triaging, editing/replying/pushing, and (when `addressed`) re-requesting review.
 
+### Workspace isolation (host mode)
+
+Workspace isolation is the **worker harness's** responsibility, not this app's and
+not the prompt's. The `c8ctl nano work` host-git provisioning (frozen v1 envelope)
+gives **each job its own `mkdtemp` run-dir + fresh clone**, runs the agent with
+`cwd` set to it (`AGENT_WORKSPACE`/`REPO_URL`/`REPO_BRANCH`/`REPO_REF` env), and
+**reaps that run-dir when the job ends**. So multiple agents on one host do **not**
+collide even in host mode — the isolation lives below the agent.
+
+Consequences the prompt (`prompts/review-round.md`) encodes:
+- The agent works only inside its provided `cwd`; it must **not** re-clone or create
+  a separate `git worktree`, and must not touch global/host state.
+- The agent **cleans up anything it creates outside the commit** before returning
+  (worktrees, scratch branches/clones, temp files), so host mode does not leak.
+- The harness checks out the PR's **existing head branch** and pushes back to it
+  (no new branch/PR). Provisioning the *existing* branch requires the head branch
+  name — see §12 (open: whether the app passes `headBranch` in the job payload or
+  the `c8ctl` integration resolves it from `prNumber`).
+
 ## 6. Signals
 
 | message | correlationKey | published by | payload |
@@ -252,6 +271,12 @@ interval.
 
 ## 12. Open questions / future
 
+- **Provisioning the existing PR branch** — the harness must checkout the PR's
+  head branch and push back to it (not create a new branch/PR). Open: does the app
+  resolve the head branch (it already has `GITHUB_TOKEN` in the poller) and pass
+  `headBranch` in the job payload, or does the `c8ctl` integration resolve it from
+  `prNumber`? Leaning app-supplied (`headBranch`) so the job is self-describing and
+  the worker stays a pure provisioner.
 - **review-ready via GitHub webhook** — same message, swappable faster trigger,
   when the app is publicly reachable. Deferred (poller-only for v1).
 - **Supervised vs external worker** — the agent runs as an external
