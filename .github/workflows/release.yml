@@ -43,7 +43,9 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - name: Ensure npm supports OIDC Trusted Publishing
-        run: npm install -g npm@latest
+        # Pinned (not @latest) for reproducible, supply-chain-safe releases.
+        # Any version >= 11.5.1 supports npm Trusted Publishing (OIDC).
+        run: npm install -g npm@11.12.1
 
       - name: Install dependencies
         run: npm ci
