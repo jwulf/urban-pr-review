@@ -15,6 +15,9 @@
     "start": "deno task start"
   },
   "devDependencies": {
-    "@types/node": "^22"
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/git": "^10.0.1",
+    "@types/node": "^22",
+    "semantic-release": "^24.2.9"
   }
 }
