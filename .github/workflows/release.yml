@@ -31,6 +31,11 @@ jobs:
           fetch-depth: 0 # semantic-release needs full history + tags
           persist-credentials: true # let @semantic-release/git push the release commit
 
+      - name: Configure git author
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
