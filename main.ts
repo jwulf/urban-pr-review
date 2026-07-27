@@ -121,7 +121,11 @@ async function listPrs(scope: "active" | "history") {
   for (const pr of prs) {
     const prKey = String(pr.pr_key);
     const rounds = (await db.rounds.find({ pr_key: prKey }))
-      .sort((a, b) => a.round_no - b.round_no || a.id - b.id);
+      .sort((a, b) => a.round_no - b.round_no || a.id - b.id)
+      // Keep the polled list light: expose whether a round has captured output,
+      // but stream the (potentially ~1 MB) transcript itself lazily on expand via
+      // GET /api/prs/rounds/:id/output.
+      .map(({ transcript, ...r }) => ({ ...r, has_output: transcript != null && String(transcript).trim() !== "" }));
     const escalations = (await db.escalations.find({ pr_key: prKey }))
       .sort((a, b) => a.id - b.id);
     out.push({ ...pr, rounds, escalations, openEscalation: escalations.find((e) => e.status === "open") ?? null });
@@ -195,6 +199,16 @@ Deno.serve({ port: PORT }, async (req) => {
     const parsed = parsePr(String((body.url ?? body.pr ?? "") as string));
     if (!parsed) return json({ error: "could not parse PR url" }, 400);
     return json(await submitPr(parsed.repo, parsed.number, parsed.url, parsed.prKey), 202);
+  }
+
+  // API: a single round's captured agent output (lazy-loaded when a round is
+  // expanded in the UI, so the polled list stays small).
+  const outputMatch = pathname.match(/^\/api\/prs\/rounds\/(\d+)\/output$/);
+  if (req.method === "GET" && outputMatch) {
+    const id = Number(outputMatch[1]);
+    const [round] = await db.rounds.find({ id });
+    if (!round) return json({ error: "round not found" }, 404);
+    return json({ id, round_no: round.round_no, transcript: round.transcript ?? "" });
   }
 
   // API: answer an escalation

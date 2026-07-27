@@ -96,19 +96,41 @@ button:disabled { opacity: .6; cursor: default; }
 .outcome { margin: .5rem 0; padding: .5rem .7rem; background: var(--panel-2); border-radius: 6px; }
 
 .rounds { list-style: none; margin: .5rem 0 0; padding: 0; }
-.round {
+.round { border-top: 1px dashed var(--border); font-size: .88rem; }
+.round-meta {
   display: grid;
-  grid-template-columns: 3rem 6.5rem 1fr;
+  grid-template-columns: 3rem 6.5rem 1fr auto;
   gap: .5rem;
+  align-items: baseline;
   padding: .35rem 0;
-  border-top: 1px dashed var(--border);
-  font-size: .88rem;
 }
+.round:not(.has-output) .round-meta { grid-template-columns: 3rem 6.5rem 1fr; }
 .round .rn { color: var(--muted); }
 .round-converged .rs { color: var(--green); }
 .round-addressed .rs { color: var(--accent); }
 .round-needs_input .rs, .round-blocked .rs { color: var(--amber); }
 .rsum { color: var(--fg); }
+
+/* Collapsible per-round agent output. */
+.round-output > summary { cursor: pointer; list-style: none; }
+.round-output > summary::-webkit-details-marker { display: none; }
+.out-hint { justify-self: end; color: var(--muted); font-size: .78rem; }
+.out-hint::before { content: "▸ "; }
+.round-output[open] .out-hint::before { content: "▾ "; }
+.transcript {
+  margin: .1rem 0 .5rem;
+  padding: .6rem .7rem;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, monospace;
+  font-size: .8rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 22rem;
+  overflow: auto;
+}
 
 .escalation {
   margin: .6rem 0;

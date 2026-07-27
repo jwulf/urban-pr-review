@@ -4,6 +4,9 @@ let scope = "active";
 const listEl = document.getElementById("list");
 const statusLine = document.getElementById("status-line");
 const submitMsg = document.getElementById("submit-msg");
+// Round-output <details> that the user has expanded, kept across the 5s
+// auto-refresh so a round they're reading doesn't collapse under them.
+const openRounds = new Set();
 
 const esc = (s) =>
   String(s ?? "").replace(/[&<>"']/g, (c) =>
@@ -18,10 +21,19 @@ const STATUS_LABEL = {
 };
 
 function roundRow(r) {
-  return `<li class="round round-${esc(r.status)}">
-    <span class="rn">#${esc(r.round_no)}</span>
+  const meta = `<span class="rn">#${esc(r.round_no)}</span>
     <span class="rs">${esc(r.status ?? "")}</span>
-    <span class="rsum">${esc(r.summary ?? "")}</span>
+    <span class="rsum">${esc(r.summary ?? "")}</span>`;
+  if (!r.has_output) {
+    return `<li class="round round-${esc(r.status)}"><div class="round-meta">${meta}</div></li>`;
+  }
+  // Collapsible per-round output; the transcript is fetched lazily on first open
+  // (see the `toggle` handler) to keep the polled list small.
+  return `<li class="round round-${esc(r.status)} has-output">
+    <details class="round-output" data-round-id="${esc(r.id)}">
+      <summary class="round-meta">${meta}<span class="out-hint">output</span></summary>
+      <pre class="transcript">Loading…</pre>
+    </details>
   </li>`;
 }
 
@@ -64,6 +76,12 @@ async function load() {
     listEl.innerHTML = prs.length
       ? prs.map(card).join("")
       : `<p class="empty">No ${scope === "history" ? "converged" : "active"} PRs.</p>`;
+    // Re-expand any round output the user had open before this refresh (setting
+    // `open` re-fires `toggle`, which lazy-loads the transcript again).
+    for (const id of openRounds) {
+      const d = listEl.querySelector(`.round-output[data-round-id="${CSS.escape(id)}"]`);
+      if (d) d.open = true; else openRounds.delete(id);
+    }
     statusLine.textContent = `${prs.length} ${scope} PR(s) · updated ${new Date().toLocaleTimeString()}`;
   } catch (err) {
     listEl.innerHTML = `<p class="empty error">Failed to load: ${esc(err)}</p>`;
@@ -117,6 +135,29 @@ listEl.addEventListener("submit", async (e) => {
     btn.textContent = "Answer & resume";
   }
 });
+
+// lazy-load a round's transcript the first time its <details> is expanded, and
+// remember expand/collapse so the state survives the auto-refresh
+listEl.addEventListener("toggle", async (e) => {
+  const d = e.target;
+  if (!(d instanceof HTMLElement) || !d.classList.contains("round-output")) return;
+  const id = d.dataset.roundId;
+  if (!d.open) { openRounds.delete(id); return; }
+  openRounds.add(id);
+  if (d.dataset.loaded) return;
+  d.dataset.loaded = "1";
+  const pre = d.querySelector(".transcript");
+  try {
+    const res = await fetch(`/api/prs/rounds/${encodeURIComponent(id)}/output`);
+    const body = await res.json();
+    pre.textContent = res.ok
+      ? (body.transcript?.trim() ? body.transcript : "(no output captured)")
+      : `Failed to load output: ${body.error ?? res.status}`;
+  } catch (err) {
+    d.dataset.loaded = "";
+    pre.textContent = `Failed to load output: ${err}`;
+  }
+}, true);
 
 // tabs
 function syncTabs() {
