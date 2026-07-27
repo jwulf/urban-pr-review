@@ -160,9 +160,8 @@ Consequences the prompt (`prompts/review-round.md`) encodes:
 - The agent **cleans up anything it creates outside the commit** before returning
   (worktrees, scratch branches/clones, temp files), so host mode does not leak.
 - The harness checks out the PR's **existing head branch** and pushes back to it
-  (no new branch/PR). Provisioning the *existing* branch requires the head branch
-  name — see §12 (open: whether the app passes `headBranch` in the job payload or
-  the `c8ctl` integration resolves it from `prNumber`).
+  (no new branch/PR). The `c8ctl` integration provisions the repo and resolves the
+  head branch from `prNumber`/`prUrl` — the app does not pass a `headBranch` var.
 
 ## 6. Signals
 
@@ -271,12 +270,11 @@ interval.
 
 ## 12. Open questions / future
 
-- **Provisioning the existing PR branch** — the harness must checkout the PR's
-  head branch and push back to it (not create a new branch/PR). Open: does the app
-  resolve the head branch (it already has `GITHUB_TOKEN` in the poller) and pass
-  `headBranch` in the job payload, or does the `c8ctl` integration resolve it from
-  `prNumber`? Leaning app-supplied (`headBranch`) so the job is self-describing and
-  the worker stays a pure provisioner.
+- **Provisioning the existing PR branch** — resolved: the `c8ctl` host-git
+  integration provisions the repo and checks out the PR's head branch (it must
+  already give the worker repo access to work at all), resolving the branch from
+  `prNumber`/`prUrl`. The app does **not** pass a `headBranch` job variable; the
+  job stays engine-shaped and the worker stays a pure provisioner.
 - **review-ready via GitHub webhook** — same message, swappable faster trigger,
   when the app is publicly reachable. Deferred (poller-only for v1).
 - **Supervised vs external worker** — the agent runs as an external
