@@ -9,9 +9,11 @@
     "@nanobpm/llm": "./nano-generated/llm-worker.ts",
     "@nanobpm/data": "./nano-generated/data-sdk.ts",
     "@nanobpm/domain": "./nano-generated/domain.ts",
+    "@nanobpm/app": "./nano-generated/app-pages.ts",
     "@lib/": "./lib/"
   },
   "tasks": {
-    "start": "deno run --allow-net --allow-read --allow-write --allow-env main.ts"
+    "start": "deno run --allow-net --allow-read --allow-write --allow-env main.ts",
+    "purge": "deno run --allow-read --allow-write --allow-env --allow-run=deno scripts/purge-db.ts"
   }
 }

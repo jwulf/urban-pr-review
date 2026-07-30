@@ -23,7 +23,7 @@ See [`SPEC.md`](./SPEC.md) for the full design.
         └─────────────────────── loop ───────────────────────────────────┘
 
  poller ── polls GitHub for a new review ──► publishes `review-ready`
- UI answer box ── POST /api/prs/:prKey/answer ──► publishes `escalation-answered`
+ UI answer box ── POST /app/actions/message ──────► publishes `escalation-answered`
 ```
 
 - **BPMN owns the durable wait** between rounds (message catch events), so agent
@@ -38,18 +38,18 @@ See [`SPEC.md`](./SPEC.md) for the full design.
 | path | purpose |
 |---|---|
 | `nano.app.json` | manifest (ADR 0027): sqlite datasource + app-hosted workers |
-| `main.ts` | entrypoint: deploy, start workers, serve UI/API, run poller |
+| `main.ts` | entrypoint: deploy, start workers, serve the page runtime + action overrides, run poller |
 | `lib/nano.ts` | deploy/worker bootstrap helpers (`@lib/nano.ts`) |
 | `resources/processes/convergence-loop.bpmn` | the durable convergence process |
 | `db/migrations/001_init.sql` | `pull_requests` / `rounds` / `escalations` |
 | `workers/*/worker.ts` | app-hosted record workers |
 | `prompts/review-round.md` | the agent's instructions (carried in the job payload) |
 | `components/review-round.json` | Zeebe element template for the agent task |
-| `public/` | the web UI (dependency-free SPA) |
+| `pages/home.page.json` | the screen, authored declaratively (ADR 0042 Page Composer) |
 
 ## Clients
 
-`main.ts` uses two surfaces (both aliased in `deno.json`):
+`main.ts` uses three surfaces (all aliased in `deno.json`):
 
 - **`@nanobpm/nano-sdk`** — the **engine** client (`createProcessInstance`,
   `publishMessage`).
@@ -57,6 +57,12 @@ See [`SPEC.md`](./SPEC.md) for the full design.
   object: `const db = await openDomain("app")` gives typed table accessors
   (`db.pull_requests`, `db.rounds`, `db.escalations`) with `insert`/`get`/`find`/
   `update`/`delete`, plus `db.raw` as the escape hatch for set/ordered SQL.
+
+- **`@nanobpm/app`** — the generic **page runtime**: it renders
+  `pages/home.page.json` into a served, data-bound screen (list, filter, detail,
+  row actions) with no hand-written frontend. `main.ts` intercepts only the three
+  app-specific actions (start a review, cancel a run, answer an escalation) and
+  delegates everything else to it.
 
 Workers use **`@nanobpm/worker`** (`defineWorker`) and open the same typed domain
 with `openDomain("app")`.
@@ -88,11 +94,22 @@ Submit a PR from the UI (`owner/repo#123` or a PR URL), via the API, or the
 webhook:
 
 ```sh
-curl -XPOST localhost:8090/api/prs -H 'content-type: application/json' \
-  -d '{"url":"https://github.com/owner/repo/pull/123"}'
+curl -XPOST localhost:8090/app/actions/start/convergence-loop \
+  -H 'content-type: application/json' \
+  -d '{"variables":{"pr":"https://github.com/owner/repo/pull/123"}}'
 
 curl -XPOST localhost:8090/hooks/submit -H 'x-hook-secret: $SECRET' \
   -H 'content-type: application/json' -d '{"url":"owner/repo#123"}'
+```
+
+## Purge
+
+The app keeps its own SQLite state (PRs/rounds/escalations) separate from the
+engine. When you purge and restart the engine, wipe the app db too so the two
+stay consistent:
+
+```sh
+deno task purge   # deletes app.db (+ WAL/SHM) and re-applies db/migrations
 ```
 
 ## The agent (external worker)

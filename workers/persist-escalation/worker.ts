@@ -43,6 +43,8 @@ defineWorker({
     });
     await db.pull_requests.update(prKey, {
       status: "escalated", current_round: round, updated_at: now,
+      open_escalation_id: Number(escalationId),
+      open_escalation_question: question || "(no question provided)",
     });
 
     return { escalationId: Number(escalationId) };
