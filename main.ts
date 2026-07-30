@@ -3,16 +3,19 @@
 // The `nano.app.json` manifest is the source of truth (models, sqlite datasource,
 // app-hosted workers). This entrypoint:
 //   1. deploys the BPMN + starts the app-hosted record workers,
-//   2. serves the custom web UI + JSON API from `public/`,
+//   2. serves the schema-driven page runtime (ADR 0042) from `pages/home.page.json`,
+//      intercepting only the three app-specific actions (start/cancel/answer),
 //   3. runs the review-ready poller.
 //
-// Two client surfaces (see SPEC §"clients"):
+// Three client surfaces (see SPEC §"clients"):
 //   • @nanobpm/nano-sdk  — the ENGINE client (createProcessInstance, publishMessage)
 //   • @nanobpm/domain    — the app's own sqlite datasource as a typed data object
 //                          (db.pull_requests/db.rounds/db.escalations, db.raw escape hatch)
+//   • @nanobpm/app       — the generic page runtime that renders `pages/*.page.json`
 import { deployAllResources, startLlmWorkers, startWorkers } from "@lib/nano.ts";
 import { createCamundaClient } from "@nanobpm/nano-sdk";
 import { openDomain } from "@nanobpm/domain";
+import { createPagesHandler } from "@nanobpm/app";
 
 const PORT = Number(Deno.env.get("PR_REVIEW_PORT") ?? 3000);
 const POLL_MS = Number(Deno.env.get("NANO_PR_POLL_MS") ?? 60_000);
@@ -100,7 +103,10 @@ async function answerEscalation(prKey: string, answer: string) {
   const escalationId = open.id;
   const ts = now();
   await db.escalations.update(escalationId, { answer, status: "answered", answered_at: ts });
-  await db.pull_requests.update(prKey, { status: "converging", updated_at: ts });
+  await db.pull_requests.update(prKey, {
+    status: "converging", updated_at: ts,
+    open_escalation_id: null, open_escalation_question: null,
+  });
   await nano.publishMessage({
     name: "escalation-answered",
     correlationKey: prKey,
@@ -109,28 +115,28 @@ async function answerEscalation(prKey: string, answer: string) {
   return { ok: true, escalationId };
 }
 
-/** Aggregate PRs with their rounds + escalations for the UI. */
-async function listPrs(scope: "active" | "history") {
-  const cond = scope === "history"
-    ? "status IN ('converged','abandoned')"
-    : "status NOT IN ('converged','abandoned')";
-  // A set-valued, ordered query the record gateway doesn't express → the
-  // sanctioned `db.raw` escape hatch (typed record ops are used everywhere else).
-  const prs = await db.raw.query(`SELECT * FROM pull_requests WHERE ${cond} ORDER BY updated_at DESC`);
-  const out = [];
-  for (const pr of prs) {
-    const prKey = String(pr.pr_key);
-    const rounds = (await db.rounds.find({ pr_key: prKey }))
-      .sort((a, b) => a.round_no - b.round_no || a.id - b.id)
-      // Keep the polled list light: expose whether a round has captured output,
-      // but stream the (potentially ~1 MB) transcript itself lazily on expand via
-      // GET /api/prs/rounds/:id/output.
-      .map(({ transcript, ...r }) => ({ ...r, has_output: transcript != null && String(transcript).trim() !== "" }));
-    const escalations = (await db.escalations.find({ pr_key: prKey }))
-      .sort((a, b) => a.id - b.id);
-    out.push({ ...pr, rounds, escalations, openEscalation: escalations.find((e) => e.status === "open") ?? null });
+/** Cancel a PR's running convergence instance and mark it abandoned. Terminating
+ * the engine instance emits no completion event (no worker runs), so the app-tier
+ * flips the PR's status here — the same place ADR 0040 puts app-owned rest state. */
+async function cancelRun(processInstanceKey: string) {
+  const [pr] = await db.pull_requests.find({ process_key: processInstanceKey });
+  try {
+    await nano.cancelProcessInstance(
+      { processInstanceKey } as unknown as Parameters<typeof nano.cancelProcessInstance>[0],
+    );
+  } catch (err) {
+    // The instance may already be gone (converged/cancelled) — still reconcile
+    // the app row so a stale "converging" PR can't linger in the UI.
+    console.warn(`[cancel] engine cancel for ${processInstanceKey}: ${err}`);
   }
-  return out;
+  if (pr) {
+    await db.pull_requests.update(String(pr.pr_key), {
+      status: "abandoned", updated_at: now(),
+      open_escalation_id: null, open_escalation_question: null,
+    });
+    return { ok: true, prKey: pr.pr_key };
+  }
+  return { ok: false, reason: "no PR for that instance" };
 }
 
 // ── review-ready poller (SPEC §10) ────────────────────────────────────────────
@@ -169,28 +175,75 @@ async function pollOnce() {
 }
 setInterval(() => void pollOnce(), POLL_MS);
 
-// ── HTTP: web UI + JSON API ───────────────────────────────────────────────────
+// ── HTTP: schema-driven page runtime (ADR 0042) + app-specific action overrides ──
+// The screen is authored declaratively in `pages/home.page.json` and served by the
+// generic Urban page runtime — no hand-written SPA or list/detail API. Only the three
+// actions that carry *app-specific* business logic (creating the PR aggregate on
+// start, reconciling app state on cancel, running the escalation-answer flow) are
+// intercepted here; the runtime handles rendering, data, filtering and the rest.
+const pagesHandler = createPagesHandler({
+  db: db.raw,
+  nano: {
+    createProcessInstance: (input) =>
+      nano.createProcessInstance(
+        input as unknown as Parameters<typeof nano.createProcessInstance>[0],
+      ) as Promise<{ processInstanceKey?: string | number }>,
+    cancelProcessInstance: (input) =>
+      nano.cancelProcessInstance(
+        { processInstanceKey: String(input.processInstanceKey) } as unknown as Parameters<
+          typeof nano.cancelProcessInstance
+        >[0],
+      ),
+    publishMessage: (input) => nano.publishMessage(input),
+  },
+  pagesDir: "pages",
+  homePage: "home",
+  sourceName: "app",
+});
+
 Deno.serve({ port: PORT }, async (req) => {
   const url = new URL(req.url);
   const { pathname } = url;
 
-  // API: list
-  if (req.method === "GET" && pathname === "/api/prs") {
-    const scope = url.searchParams.get("scope") === "history" ? "history" : "active";
-    return json(await listPrs(scope));
-  }
-
-  // API: submit (form / UI)
-  if (req.method === "POST" && pathname === "/api/prs") {
+  // Override: start the convergence loop for a PR. The generic runtime would just
+  // createProcessInstance; we first parse the PR reference and create the aggregate.
+  if (req.method === "POST" && pathname === "/app/actions/start/convergence-loop") {
     const body = await req.json().catch(() => ({} as Record<string, unknown>));
-    const raw = String((body.url ?? body.pr ?? body.repo ?? "") as string) +
-      (body.number ? `#${body.number}` : "");
+    const vars = (body.variables ?? {}) as Record<string, unknown>;
+    const raw = String((vars.pr ?? vars.url ?? "") as string).trim();
     const parsed = parsePr(raw);
     if (!parsed) return json({ error: "could not parse PR (use owner/repo#123 or a PR URL)" }, 400);
     return json(await submitPr(parsed.repo, parsed.number, parsed.url, parsed.prKey), 202);
   }
 
-  // Webhook: submit (shared-secret auth via X-Hook-Secret)
+  // Override: cancel a run. Terminating the instance emits no completion event, so
+  // reconcile the app row (status='abandoned', clear open escalation) here.
+  if (req.method === "POST" && pathname === "/app/actions/cancel") {
+    const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    const key = body.processInstanceKey;
+    if (key == null || String(key) === "") return json({ error: "processInstanceKey is required" }, 400);
+    const r = await cancelRun(String(key));
+    return json(r, r.ok ? 200 : 404);
+  }
+
+  // Override: answer an escalation (message escalation-answered). Runs the app's
+  // answer flow (record the answer, clear the open escalation) instead of a bare
+  // publishMessage — the message is published inside answerEscalation.
+  if (req.method === "POST" && pathname === "/app/actions/message") {
+    const body = await req.json().catch(() => ({} as Record<string, unknown>));
+    if (String(body.name ?? "") === "escalation-answered") {
+      const prKey = String(body.correlationKey ?? "");
+      const vars = (body.variables ?? {}) as Record<string, unknown>;
+      const answer = String((vars.answer ?? "") as string).trim();
+      if (!prKey) return json({ error: "correlationKey is required" }, 400);
+      if (!answer) return json({ error: "answer is required" }, 400);
+      const r = await answerEscalation(prKey, answer);
+      return json(r, r.ok ? 200 : 404);
+    }
+    // Fall through to the generic runtime for any other message.
+  }
+
+  // Webhook: submit (shared-secret auth via X-Hook-Secret). Not part of the page UI.
   if (req.method === "POST" && pathname === "/hooks/submit") {
     if (WEBHOOK_SECRET && req.headers.get("x-hook-secret") !== WEBHOOK_SECRET) {
       return json({ error: "unauthorized" }, 401);
@@ -201,42 +254,9 @@ Deno.serve({ port: PORT }, async (req) => {
     return json(await submitPr(parsed.repo, parsed.number, parsed.url, parsed.prKey), 202);
   }
 
-  // API: a single round's captured agent output (lazy-loaded when a round is
-  // expanded in the UI, so the polled list stays small).
-  const outputMatch = pathname.match(/^\/api\/prs\/rounds\/(\d+)\/output$/);
-  if (req.method === "GET" && outputMatch) {
-    const id = Number(outputMatch[1]);
-    const [round] = await db.rounds.find({ id });
-    if (!round) return json({ error: "round not found" }, 404);
-    return json({ id, round_no: round.round_no, transcript: round.transcript ?? "" });
-  }
-
-  // API: answer an escalation
-  const answerMatch = pathname.match(/^\/api\/prs\/(.+)\/answer$/);
-  if (req.method === "POST" && answerMatch) {
-    const prKey = decodeURIComponent(answerMatch[1]);
-    const body = await req.json().catch(() => ({} as Record<string, unknown>));
-    const answer = String((body.answer ?? "") as string).trim();
-    if (!answer) return json({ error: "answer is required" }, 400);
-    const r = await answerEscalation(prKey, answer);
-    return json(r, r.ok ? 200 : 404);
-  }
-
-  // Static SPA
-  const rel = pathname === "/" ? "/index.html" : pathname;
-  try {
-    const file = await Deno.readTextFile(`public${rel}`);
-    const type = rel.endsWith(".html")
-      ? "text/html"
-      : rel.endsWith(".js")
-      ? "text/javascript"
-      : rel.endsWith(".css")
-      ? "text/css"
-      : "text/plain";
-    return new Response(file, { headers: { "content-type": `${type}; charset=utf-8` } });
-  } catch {
-    return new Response("not found", { status: 404 });
-  }
+  // Everything else — the screen, its data, filtering, and the non-overridden
+  // actions — is served by the generic page runtime.
+  return pagesHandler(req);
 });
 
 console.log(`urban-pr-review serving on :${PORT} (poll ${POLL_MS}ms, maxRounds ${MAX_ROUNDS})`);

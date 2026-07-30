@@ -30,6 +30,7 @@ defineWorker({
     await db.pull_requests.update(prKey, {
       status: "converged", current_round: round,
       outcome: summary, converged_at: now, updated_at: now,
+      open_escalation_id: null, open_escalation_question: null,
     });
 
     return {};

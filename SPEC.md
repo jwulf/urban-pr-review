@@ -56,12 +56,12 @@ surface are proposed and open for adjustment.
 ```
 urban-pr-review/
   nano.app.json               # manifest (ADR 0027): sqlite data, domain types, submit webhook trigger
-  main.ts                     # Deno entrypoint: deploy + start workers + Deno.serve (UI, API, poller)
+  main.ts                     # Deno entrypoint: deploy + start workers + Deno.serve (page runtime + action overrides + poller)
   deno.json
-  public/                     # custom web UI (no built-in surface fits a PR list)
-    index.html
-    app.js
-    style.css
+  pages/
+    home.page.json            # the screen, authored declaratively (ADR 0042 Page Composer)
+  scripts/
+    purge-db.ts               # `deno task purge`: wipe + re-migrate the app db
   resources/
     processes/
       convergence-loop.bpmn   # the durable convergence process
@@ -218,24 +218,29 @@ CREATE INDEX idx_rounds_pr ON rounds(pr_key);
 CREATE INDEX idx_esc_pr ON escalations(pr_key);
 ```
 
-## 8. Web UI + API routes (`main.ts` / `public/`) — PROPOSED
+## 8. Screen + routes (`main.ts` + `pages/home.page.json`)
 
-Custom UI (there is no built-in surface for a PR list). Served from `public/`.
+The UI is authored declaratively as `pages/home.page.json` and served by the
+generic Urban **page runtime** (`@nanobpm/app`, ADR 0042) — no hand-written SPA.
+The page defines status-filtered tabs (active vs. history), a submit form, a
+per-row **Cancel** action, and an expandable detail with the round/escalation
+child grids, a lazily-loaded transcript, and a conditional **answer** form shown
+when the PR has an open escalation (`open_escalation_id`, denormalised onto the
+row by migration `003`).
 
-- **Active view** — PRs where `status != converged/abandoned`, each a collapsible
-  card: repo/#number/title, current status + round, per-round summaries, and any
-  **open escalation** with an inline answer box.
-- **History view** — converged/abandoned PRs with their full round history.
-- **Submit** — a form (`repo`, `number` or a pasted URL).
+`main.ts` delegates to the runtime and intercepts only the three actions that
+carry app-specific business logic:
 
-API:
 | method | route | purpose |
 |---|---|---|
-| `GET` | `/api/prs?scope=active\|history` | list PRs + nested rounds/escalations |
-| `POST` | `/api/prs` | submit a PR (form) → start the process |
-| `POST` | `/hooks/submit` | webhook submit (HMAC/shared-secret auth) → start the process |
-| `POST` | `/api/prs/:prKey/answer` | answer an open escalation → publish `escalation-answered` |
-| `GET` | `/` + static | the SPA |
+| `POST` | `/app/actions/start/convergence-loop` | parse the PR ref → create the aggregate + start the process |
+| `POST` | `/app/actions/cancel` | cancel the engine instance + mark the PR `abandoned` |
+| `POST` | `/app/actions/message` (`escalation-answered`) | answer an open escalation → publish `escalation-answered` |
+| `POST` | `/hooks/submit` | webhook submit (shared-secret auth) → start the process |
+
+Everything else (`GET /`, `GET /app/pages/*`, `GET /app/data/*`, the renderer) is
+served by the runtime. `deno task purge` wipes and re-migrates the app db (used
+when the engine data is purged, to keep app state and engine state consistent).
 
 ## 9. Prompt asset mechanism (agreed: option A)
 
