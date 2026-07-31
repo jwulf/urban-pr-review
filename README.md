@@ -11,6 +11,136 @@ that job is the worker's concern — this app never names it.
 
 See [`SPEC.md`](./SPEC.md) for the full design.
 
+## HOWTO: run agents that converge PRs for you, all day
+
+### The problem this solves
+
+Driving a PR to convergence is mostly *waiting*: open a review, wait 5–15 min for
+the reviewer, address the comments, re-request, wait again — often ten rounds
+deep, escalating to a human only when the reviewer is stuck. If a single agent
+babysits one PR, it spends almost all of its time **idle-polling** a review that
+hasn't landed yet. That is wasted wall-clock and a wasted worker slot.
+
+This app inverts that. **The BPMN process owns the durable wait** between rounds
+(a real message-catch event), so no agent is ever parked holding a job slot while
+a review is pending. Instead you **hire a couple of agent workers once**, and they
+pull `senior:pr-review` jobs from *whatever PR is ready right now* — alternating
+across all in-flight reviews. Two agents can keep a dozen PRs converging in
+parallel, and they only run when there is actual work to do.
+
+Set that up by: **(1)** running this app, **(2)** submitting PRs, and **(3)**
+hiring agent workers with [`c8ctl nano`](https://github.com/jwulf/c8ctl-plugin-nano).
+
+### 0. Prerequisites
+
+- A running **Nano gateway/engine** (default `http://localhost:8080`). This is
+  what the app deploys to and what agents pull jobs from.
+- **[Deno](https://deno.land/)** (to run this app) and the **c8ctl CLI with the
+  `nano` plugin** installed (to hire/run agents).
+- On each machine that will *host an agent*: the **GitHub CLI** logged in
+  (`gh auth login`) or a `GITHUB_TOKEN`/`GH_TOKEN` in the environment, and the
+  agent harness itself — e.g. the **[Copilot CLI](https://github.com/github/copilot-cli)**
+  (`copilot`).
+
+### 1. Install the app into your Nano IDE
+
+Open the Nano console and **Projects → Import by reference**, pointing at this
+app's folder (ADR 0041). That registers the app so the console can start it, or
+drop a `*.project-ref.json` next to your other projects. `nano-ide.ext.json`
+marks it as an example so it shows up in the examples list.
+
+You can also just run it standalone (next step) — the IDE import is only needed if
+you want to launch/manage it from the console.
+
+### 2. Start the app
+
+```sh
+deno task start        # → http://localhost:8090
+```
+
+That deploys `convergence-loop.bpmn`, starts the app-hosted record workers, serves
+the web UI at **<http://localhost:8090>**, and runs the review-ready poller (which
+needs `GITHUB_TOKEN` to watch GitHub — without it, re-reviews come only from the
+UI/CLI). Point it at a non-default gateway with `NANOBPMN_BASE_URL`.
+
+### 3. Submit a PR
+
+From the UI (`owner/repo#123` or a PR URL), the API, or the webhook — see
+[Run](#run) below. Each submitted PR starts one durable `convergence-loop`
+instance that parks on a message-catch event until an agent services its
+`senior:pr-review` round.
+
+### 4. Hire an agent worker
+
+An agent is a CLI harness (Copilot CLI here) turned into a Nano job worker. Hire a
+profile whose **rank + capability** produce the `senior:pr-review` token this app's
+task uses:
+
+```sh
+c8ctl nano hire \
+  --name reviewer \
+  --rank senior \
+  --capabilities pr-review \
+  --command 'copilot -p - --allow-all-tools' \
+  --model <your-model>
+```
+
+- `--rank senior` + `--capabilities pr-review` makes the worker subscribe to the
+  `senior:pr-review` job type (the rank×capability matrix). That is exactly the
+  task type this app emits.
+- `--command 'copilot -p - --allow-all-tools'` starts the Copilot CLI reading its
+  prompt from **stdin** (`-p -`). The harness pipes the whole job JSON (prompt +
+  `job.variables`: `prUrl`, `repo`, `prNumber`, `round`, `answer?`) to stdin;
+  `prompts/review-round.md` tells the agent how to read it and where to write its
+  result.
+- **`--allow-all-tools` is the crucial flag.** Without it, Copilot pauses to ask
+  permission before each tool call — and an unattended worker has no human to
+  answer, so the job stalls. `--allow-all-tools` lets it run the whole round
+  non-interactively. (Pair with `--deny-tool` if you want to blocklist specific
+  tools.)
+
+### 5. Put the agent to work
+
+```sh
+c8ctl nano work reviewer      # polls for senior:pr-review jobs until Ctrl-C
+```
+
+Now every PR you submit gets picked up automatically. Start a **second** worker
+(same command, another terminal or another machine) and the two alternate across
+whichever PRs are ready — that is the idle-time you reclaim. Run more than one job
+at once per worker with `--max-parallel 2`.
+
+### Isolation — each job gets its own clean workspace
+
+In the default **host mode** (`--sandbox none`), the worker provisions a
+**throwaway, per-job workspace**: a fresh clone under `<state>/agent-runs/run-*`
+checked out on the PR's head branch, exposed to the agent as `AGENT_WORKSPACE` /
+`REPO_URL` / `REPO_BRANCH` / `REPO_REF`, and **reaped after the job**. So multiple
+agents on one host don't step on each other, and `prompts/review-round.md` already
+instructs the agent to stay inside its working directory.
+
+Host workers inherit *your* `gh`/`GITHUB_TOKEN` login, so no extra auth is needed.
+Docker/podman sandboxes exist (`--sandbox docker --image …`) for stronger
+isolation, but container-side git provisioning is a later increment — container
+jobs don't clone yet, and don't inherit your host login (pass credentials via
+`--secret-resolver host` / `secretRefs`). For the review loop, **host mode is the
+recommended setup.**
+
+### Run it across spare hardware (incl. a Raspberry Pi)
+
+Nano ships ARM binaries (arm64/armv7/armv6), so the whole thing scales down nicely:
+
+- **All-in-one:** run the gateway, this app, and one or two workers on your laptop.
+- **Distributed:** run the **Nano gateway on a Raspberry Pi** (always-on, low
+  power), run this app anywhere, and put **agent workers on spare machines** — each
+  worker just needs the c8ctl CLI, the Copilot CLI logged in, and
+  `NANOBPMN_BASE_URL` pointed at the Pi. Add or remove workers at will; the BPMN
+  process holds all durable state, so workers are stateless and disposable.
+
+The payoff: instead of one agent burning wall-clock polling a single PR, a small
+pool of always-available workers keeps every open review converging — and idles to
+zero cost when there's nothing to do.
+
 ## How it works
 
 ```
