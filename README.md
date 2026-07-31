@@ -59,9 +59,10 @@ deno task start        # → http://localhost:8090
 ```
 
 That deploys `convergence-loop.bpmn`, starts the app-hosted record workers, serves
-the web UI at **<http://localhost:8090>**, and runs the review-ready poller (which
-needs `GITHUB_TOKEN` to watch GitHub — without it, re-reviews come only from the
-UI/CLI). Point it at a non-default gateway with `NANOBPMN_BASE_URL`.
+the web UI at **<http://localhost:8090>**, and runs the review-ready poller. See
+[Run](#run) and [Configuration](#configuration) for the authoritative port and
+env-var details (`PORT`, `GITHUB_TOKEN` to enable the poller, `NANOBPMN_BASE_URL`
+for a non-default gateway, etc.).
 
 ### 3. Submit a PR
 
@@ -98,6 +99,13 @@ c8ctl nano hire \
   answer, so the job stalls. `--allow-all-tools` lets it run the whole round
   non-interactively. (Pair with `--deny-tool` if you want to blocklist specific
   tools.)
+
+  > ⚠️ **Only enable `--allow-all-tools` for code and hosts you trust.** It grants
+  > the agent unattended, broad permissions (shell, file writes, network). Each
+  > job runs in a throwaway per-job workspace (see below), but the worker still
+  > runs as your user on the host — don't point it at untrusted PRs on a shared
+  > machine. Use `--deny-tool` to narrow it, or a container sandbox for stronger
+  > isolation.
 
 ### 5. Put the agent to work
 
