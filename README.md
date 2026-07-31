@@ -6,7 +6,7 @@ loop per PR.
 
 The reviewer-agent is **decoupled**: from this app's point of view it is just a
 BPMN service task (`senior:pr-review`) with a job payload. Whether a Copilot
-instance (via `c8ctl nano recruit`/`work`), a script, or anything else services
+instance (via `c8ctl nano hire`/`work`), a script, or anything else services
 that job is the worker's concern — this app never names it.
 
 See [`SPEC.md`](./SPEC.md) for the full design.
