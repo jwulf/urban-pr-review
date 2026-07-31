@@ -4,6 +4,16 @@
   "description": "Nano Urban app that drives GitHub pull requests to convergence against an automated reviewer, one durable multi-round loop per PR.",
   "type": "module",
   "main": "main.ts",
+  "author": "Josh Wulf <josh.wulf@camunda.com>",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/jwulf/urban-pr-review#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jwulf/urban-pr-review.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jwulf/urban-pr-review/issues"
+  },
   "keywords": [
     "nano-ide-ext",
     "nano-ide-agentic-sdlc"

@@ -1,0 +1,7 @@
+{
+  "id": "urban-pr-review",
+  "kind": "example",
+  "displayName": "Urban PR Review — model-first",
+  "appDir": ".",
+  "summary": "Model-first Nano Urban app: a durable multi-round loop that drives a GitHub PR to convergence against an automated reviewer, escalating to a human when the reviewer is stuck or a round cap is hit. Reference companion to the code-first (defineFlow) variant."
+}
