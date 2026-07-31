@@ -4,7 +4,7 @@ A Nano **Urban app** that drives GitHub pull requests to convergence against an
 automated reviewer (e.g. GitHub Copilot's PR review), one durable, multi-round
 loop per PR. The reviewer-agent is **decoupled**: from this app's point of view
 it is just a BPMN service task with a `taskType` and a job payload. Whether a
-Copilot instance (via `c8ctl nano recruit`/`work`), a script, or anything else
+Copilot instance (via `c8ctl nano hire`/`work`), a script, or anything else
 services that job is entirely the worker's concern — this app never names it.
 
 Status: **design draft** — decisions below are agreed; domain model + web
