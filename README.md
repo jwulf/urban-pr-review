@@ -256,9 +256,10 @@ npm run purge   # deletes app.db (+ WAL/SHM) and re-applies db/migrations
 ## Compile to a runtime-free binary
 
 The app is authored on Node's built-ins (`node:sqlite`, `node:http`, `process.env`),
-so **Deno** can cross-compile it into a native executable that bundles the Node
-runtime, the npm dependencies and the app's entry code — so the target box needs
-**no Node/`node_modules` install**:
+so **Deno** can cross-compile it into a native executable that bundles the Deno
+runtime (its `denort` binary, which supplies the `node:*` compatibility APIs), the
+npm dependencies and the app's entry code — so the target box needs **no
+Node/Deno/`node_modules` install**:
 
 ```sh
 npm run compile   # → dist/urban-pr-review  (via `deno compile`)
