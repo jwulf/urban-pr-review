@@ -19,40 +19,53 @@
 import { createNanoSdkEngineClient, runFromEnv, selectHost } from "@nanobpm/urban";
 import { pollOnce } from "./app/service.ts";
 
-const PORT = Number(Deno.env.get("PR_REVIEW_PORT") ?? 3000);
-const POLL_MS = Number(Deno.env.get("NANO_PR_POLL_MS") ?? 60_000);
-const GITHUB_TOKEN = Deno.env.get("GITHUB_TOKEN") ?? "";
+const PORT = Number(process.env.PR_REVIEW_PORT ?? 3000);
+const POLL_MS = Number(process.env.NANO_PR_POLL_MS ?? 60_000);
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN ?? "";
 
 const host = selectHost();
 
 // One engine client, shared by the runtime (surfaces/actions/workers) and the poller. Honour
 // the app's documented NANOBPMN_BASE_URL as well as the runtime's CAMUNDA_REST_ADDRESS.
-const restAddress = Deno.env.get("CAMUNDA_REST_ADDRESS") ??
-  `${(Deno.env.get("NANOBPMN_BASE_URL") ?? "http://localhost:8080").replace(/\/+$/, "")}/v2`;
+const restAddress = process.env.CAMUNDA_REST_ADDRESS ??
+  `${(process.env.NANOBPMN_BASE_URL ?? "http://localhost:8080").replace(/\/+$/, "")}/v2`;
 const engine = await createNanoSdkEngineClient({
   restAddress,
-  token: Deno.env.get("CAMUNDA_TOKEN"),
-  transport: Deno.env.get("CAMUNDA_TRANSPORT") ?? "auto",
+  token: process.env.CAMUNDA_TOKEN,
+  transport: process.env.CAMUNDA_TRANSPORT ?? "auto",
   log: host.log,
 });
 
-// Manage our own shutdown so the poller interval is cleared and the process exits (the runtime
-// signal handler would only stop the HTTP server, leaving the interval keeping us alive).
+// Manage our own shutdown so the poller is stopped and the process exits (the runtime
+// signal handler would only stop the HTTP server, leaving the poller keeping us alive).
 const app = await runFromEnv({ engine, host, port: PORT, handleSignals: false });
 
-const timer = app.data
-  ? setInterval(() => void pollOnce(app.data!, engine, GITHUB_TOKEN), POLL_MS)
-  : undefined;
-
-for (const sig of ["SIGINT", "SIGTERM"] as const) {
+// Review-ready poller. Self-scheduling (not setInterval) so a slow GitHub call can never
+// overlap two passes (which could double-signal `review-ready`); the next pass is scheduled
+// only after the previous one settles.
+let shuttingDown = false;
+let pollTimer: ReturnType<typeof setTimeout> | null = null;
+async function pollLoop(): Promise<void> {
   try {
-    Deno.addSignalListener(sig, () => {
-      if (timer !== undefined) clearInterval(timer);
-      app.stop().finally(() => Deno.exit(0));
-    });
-  } catch {
-    // Signal listeners may be unavailable on some platforms (e.g. Windows).
+    if (app.data) await pollOnce(app.data, engine, GITHUB_TOKEN);
+  } catch (err) {
+    console.error("poll error:", err instanceof Error ? err.message : err);
   }
+  if (!shuttingDown) pollTimer = setTimeout(() => void pollLoop(), POLL_MS);
+}
+if (app.data) pollTimer = setTimeout(() => void pollLoop(), POLL_MS);
+
+async function drainAndExit(): Promise<void> {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  if (pollTimer) clearTimeout(pollTimer);
+  try {
+    await app.stop();
+  } catch { /* already stopped */ }
+  process.exit(0);
+}
+for (const sig of ["SIGINT", "SIGTERM"] as const) {
+  process.on(sig, () => void drainAndExit());
 }
 
-console.log(`urban-pr-review serving on :${PORT} (poll ${POLL_MS}ms, maxRounds ${Deno.env.get("NANO_PR_MAX_ROUNDS") ?? 10})`);
+console.log(`urban-pr-review serving on :${PORT} (poll ${POLL_MS}ms, maxRounds ${process.env.NANO_PR_MAX_ROUNDS ?? 10})`);

@@ -12,11 +12,22 @@ import type { DataLayer, EngineClient } from "@nanobpm/urban";
 /** The BPMN process this app drives (see `resources/processes/convergence-loop.bpmn`). */
 export const PROCESS_ID = "convergence-loop";
 /** Round cap before the loop escalates to a human. */
-export const MAX_ROUNDS = Number(Deno.env.get("NANO_PR_MAX_ROUNDS") ?? 10);
+export const MAX_ROUNDS = Number(process.env.NANO_PR_MAX_ROUNDS ?? 10);
 
 // The prompt asset is read once at module load and carried on each new instance (SPEC §9),
-// so a PR keeps the instructions it started with for its whole run.
-const REVIEW_PROMPT = await Deno.readTextFile("prompts/review-round.md").catch(() => "");
+// so a PR keeps the instructions it started with for its whole run. Host-agnostic: reads via
+// Deno inside a compiled binary, else via node:fs under Node.
+const REVIEW_PROMPT = await (async () => {
+  const path = "prompts/review-round.md";
+  try {
+    const g = globalThis as { Deno?: { readTextFile(p: string): Promise<string> } };
+    return g.Deno?.readTextFile
+      ? await g.Deno.readTextFile(path)
+      : await (await import("node:fs/promises")).readFile(path, "utf8");
+  } catch {
+    return "";
+  }
+})();
 
 const now = () => new Date().toISOString();
 

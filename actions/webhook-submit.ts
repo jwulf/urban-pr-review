@@ -4,7 +4,7 @@
 import type { ActionHandler } from "@nanobpm/urban";
 import { parsePr, submitPr } from "../app/service.ts";
 
-const WEBHOOK_SECRET = Deno.env.get("NANO_PR_WEBHOOK_SECRET") ?? "";
+const WEBHOOK_SECRET = process.env.NANO_PR_WEBHOOK_SECRET ?? "";
 
 const handler: ActionHandler = async ({ req, body }, app) => {
   if (WEBHOOK_SECRET && req.headers.get("x-hook-secret") !== WEBHOOK_SECRET) {
