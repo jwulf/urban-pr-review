@@ -253,19 +253,27 @@ stay consistent:
 npm run purge   # deletes app.db (+ WAL/SHM) and re-applies db/migrations
 ```
 
-## Compile to a standalone binary
+## Compile to a runtime-free binary
 
 The app is authored on Node's built-ins (`node:sqlite`, `node:http`, `process.env`),
-so **Deno** can cross-compile it into a single self-contained executable — no Node,
-no `node_modules`, no runtime install on the target box:
+so **Deno** can cross-compile it into a native executable that bundles the Node
+runtime, the npm dependencies and the app's entry code — so the target box needs
+**no Node/`node_modules` install**:
 
 ```sh
 npm run compile   # → dist/urban-pr-review  (via `deno compile`)
 ```
 
-The binary embeds the pages, `db/migrations`, prompts, `resources` (BPMN) and
-components as assets and boots identically to `npm start` (same env vars). Add
-`--target` in the `deno.json` `compile` task to cross-compile for another OS/arch.
+> **Not (yet) a single self-contained file.** The Urban runtime loads the app's
+> declarative files — `nano.app.json`, `pages/`, `db/migrations/`, `prompts/`,
+> `resources/` and the `actions/`/`workers/` modules — from the **working
+> directory at runtime** (via `readTextFile` + dynamic `import`), which
+> `deno compile` cannot embed. So ship the binary **alongside those app files**
+> and run it from that directory; it then boots identically to `npm start` (same
+> env vars). Making the binary fully self-contained needs an *embeddable Urban
+> app* capability in `@nanobpm/urban` (inline pages/migrations + handler refs),
+> tracked separately. Add `--target` in the `deno.json` `compile` task to
+> cross-compile for another OS/arch.
 
 ## The agent (external worker)
 

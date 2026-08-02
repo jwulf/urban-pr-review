@@ -8,6 +8,6 @@
   "tasks": {
     "start": "deno run --allow-net --allow-read --allow-write --allow-env main.ts",
     "purge": "deno run --allow-read --allow-write --allow-env scripts/purge-db.ts",
-    "compile": "deno compile --allow-net --allow-read --allow-write --allow-env --include pages --include db --include prompts --include resources --include components -o dist/urban-pr-review main.ts"
+    "compile": "deno compile --allow-net --allow-read --allow-write --allow-env -o dist/urban-pr-review main.ts"
   }
 }
