@@ -3,17 +3,10 @@
     "lib": ["deno.window", "deno.ns"]
   },
   "imports": {
-    "@nanobpm/nano-sdk": "npm:@nanobpm/nano-sdk@^1",
-    "@nanobpm/worker": "./nano-generated/workers.ts",
-    "@nanobpm/messages": "./nano-generated/messages.ts",
-    "@nanobpm/llm": "./nano-generated/llm-worker.ts",
-    "@nanobpm/data": "./nano-generated/data-sdk.ts",
-    "@nanobpm/domain": "./nano-generated/domain.ts",
-    "@nanobpm/app": "./nano-generated/app-pages.ts",
-    "@lib/": "./lib/"
+    "@nanobpm/urban": "npm:@nanobpm/urban@^0.11.1"
   },
   "tasks": {
     "start": "deno run --allow-net --allow-read --allow-write --allow-env main.ts",
-    "purge": "deno run --allow-read --allow-write --allow-env --allow-run=deno scripts/purge-db.ts"
+    "purge": "deno run --allow-read --allow-write --allow-env scripts/purge-db.ts"
   }
 }

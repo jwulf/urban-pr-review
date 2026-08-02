@@ -1,8 +1,5 @@
 // pr.finalize — the PR has converged. Record the final round and close the PR out.
-import { defineWorker } from "@nanobpm/worker";
-import { openDomain } from "@nanobpm/domain";
-
-const db = await openDomain("app");
+import type { AppJobHandler } from "@nanobpm/urban";
 
 interface In {
   prKey: string;
@@ -11,28 +8,35 @@ interface In {
 }
 
 const AGENT_RESULT_KEY = "io.nanobpm.agentResult";
-function transcriptOf(vars: Record<string, unknown>): string | undefined {
+function transcriptOf(vars: Record<string, unknown>): string | null {
   const env = vars[AGENT_RESULT_KEY] as { output?: unknown } | undefined;
-  return typeof env?.output === "string" ? env.output : undefined;
+  return typeof env?.output === "string" ? env.output : null;
 }
 
-defineWorker({
-  type: "pr.finalize",
-  async handle(job) {
-    const { prKey, round, summary = "" } = job.variables as unknown as In;
-    const now = new Date().toISOString();
+const handler: AppJobHandler = async (job, app) => {
+  const { prKey, round, summary = "" } = job.variables as unknown as In;
+  const now = new Date().toISOString();
 
-    await db.rounds.insert({
-      pr_key: prKey, round_no: round, status: "converged", summary,
-      transcript: transcriptOf(job.variables as Record<string, unknown>) ?? null,
-      started_at: now, ended_at: now,
-    });
-    await db.pull_requests.update(prKey, {
-      status: "converged", current_round: round,
-      outcome: summary, converged_at: now, updated_at: now,
-      open_escalation_id: null, open_escalation_question: null,
-    });
+  await app.data.table("rounds", "id").insert({
+    pr_key: prKey,
+    round_no: round,
+    status: "converged",
+    summary,
+    transcript: transcriptOf(job.variables),
+    started_at: now,
+    ended_at: now,
+  });
+  await app.data.table("pull_requests", "pr_key").update(prKey, {
+    status: "converged",
+    current_round: round,
+    outcome: summary,
+    converged_at: now,
+    updated_at: now,
+    open_escalation_id: null,
+    open_escalation_question: null,
+  });
 
-    return {};
-  },
-});
+  return {};
+};
+
+export default handler;

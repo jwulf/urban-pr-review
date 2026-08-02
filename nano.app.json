@@ -31,9 +31,32 @@
     {
       "taskType": "pr.finalize",
       "handler": "workers/finalize/worker.ts"
+    }
+  ],
+  "surfaces": {
+    "pages": {
+      "enabled": true,
+      "pagesDir": "pages",
+      "homePage": "home",
+      "sourceName": "app"
+    }
+  },
+  "actions": [
+    {
+      "path": "/app/actions/start/convergence-loop",
+      "module": "actions/start.ts"
     },
     {
-      "taskType": "senior:pr-review"
+      "path": "/app/actions/cancel",
+      "module": "actions/cancel.ts"
+    },
+    {
+      "path": "/app/actions/message",
+      "module": "actions/message.ts"
+    },
+    {
+      "path": "/hooks/submit",
+      "module": "actions/webhook-submit.ts"
     }
   ]
 }
