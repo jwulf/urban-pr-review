@@ -35,8 +35,11 @@ hiring agent workers with [`c8ctl nano`](https://github.com/jwulf/c8ctl-plugin-n
 
 - A running **Nano gateway/engine** (default `http://localhost:8080`). This is
   what the app deploys to and what agents pull jobs from.
-- **[Deno](https://deno.land/)** (to run this app) and the **c8ctl CLI with the
-  `nano` plugin** installed (to hire/run agents).
+- **[Node](https://nodejs.org/)** >= 22.6 (to run this app — it hosts on Node's
+  built-ins: `node:sqlite`, `node:http`; `@nanobpm/urban` declares `engines.node
+  >=22.6`). **[Deno](https://deno.land/)** is *optional*, used only to
+  cross-compile a standalone binary (`npm run compile`). Also install the **c8ctl
+  CLI with the `nano` plugin** (to hire/run agents).
 - On each machine that will *host an agent*: the **GitHub CLI** logged in
   (`gh auth login`) or a `GITHUB_TOKEN`/`GH_TOKEN` in the environment, and the
   agent harness itself — e.g. the **[Copilot CLI](https://github.com/github/copilot-cli)**
@@ -55,7 +58,7 @@ you want to launch/manage it from the console.
 ### 2. Start the app
 
 ```sh
-deno task start        # → http://localhost:8090
+npm start              # → http://localhost:8090
 ```
 
 That deploys `convergence-loop.bpmn`, starts the app-hosted record workers, serves
@@ -222,7 +225,7 @@ with `openDomain("app")`.
 Against a running Nano engine:
 
 ```sh
-deno task start
+npm start
 ```
 
 Then open <http://localhost:8090>. Or import it by reference into a Nano server
@@ -247,8 +250,31 @@ engine. When you purge and restart the engine, wipe the app db too so the two
 stay consistent:
 
 ```sh
-deno task purge   # deletes app.db (+ WAL/SHM) and re-applies db/migrations
+npm run purge   # deletes app.db (+ WAL/SHM) and re-applies db/migrations
 ```
+
+## Compile to a runtime-free binary
+
+The app is authored on Node's built-ins (`node:sqlite`, `node:http`, `process.env`),
+so **Deno** can cross-compile it into a native executable that bundles the Deno
+runtime (its `denort` binary, which supplies the `node:*` compatibility APIs), the
+npm dependencies and the app's entry code — so the target box needs **no
+Node/Deno/`node_modules` install**:
+
+```sh
+npm run compile   # → dist/urban-pr-review  (via `deno compile`)
+```
+
+> **Not (yet) a single self-contained file.** The Urban runtime loads the app's
+> declarative files — `nano.app.json`, `pages/`, `db/migrations/`, `prompts/`,
+> `resources/` and the `actions/`/`workers/` modules — from the **working
+> directory at runtime** (via `readTextFile` + dynamic `import`), which
+> `deno compile` cannot embed. So ship the binary **alongside those app files**
+> and run it from that directory; it then boots identically to `npm start` (same
+> env vars). Making the binary fully self-contained needs an *embeddable Urban
+> app* capability in `@nanobpm/urban` (inline pages/migrations + handler refs),
+> tracked separately. Add `--target` in the `deno.json` `compile` task to
+> cross-compile for another OS/arch.
 
 ## The agent (external worker)
 

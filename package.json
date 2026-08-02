@@ -4,6 +4,9 @@
   "description": "Nano Urban app that drives GitHub pull requests to convergence against an automated reviewer, one durable multi-round loop per PR.",
   "type": "module",
   "main": "main.ts",
+  "engines": {
+    "node": ">=22.6"
+  },
   "author": "Josh Wulf <josh.wulf@camunda.com>",
   "license": "Apache-2.0",
   "homepage": "https://github.com/jwulf/urban-pr-review#readme",
@@ -22,7 +25,12 @@
     "access": "public"
   },
   "scripts": {
-    "start": "deno task start"
+    "start": "node --experimental-strip-types main.ts",
+    "purge": "node --experimental-strip-types scripts/purge-db.ts",
+    "compile": "deno task compile"
+  },
+  "dependencies": {
+    "@nanobpm/urban": "^0.11.1"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
