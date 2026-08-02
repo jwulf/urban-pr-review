@@ -12,7 +12,13 @@ function fileUrlToPath(u: string): string {
   }
   // Authority form (`file://host/path` or `file:///path`) parses cleanly as a URL.
   if (u.startsWith("file://")) {
-    const p = decodeURIComponent(new URL(u).pathname);
+    const parsed = new URL(u);
+    if (parsed.hostname && parsed.hostname !== "localhost") {
+      throw new Error(
+        `purge does not support remote file hosts, got host "${parsed.hostname}" in: ${u}`,
+      );
+    }
+    const p = decodeURIComponent(parsed.pathname);
     // Windows drive fixup: `/C:/x` -> `C:/x`.
     return /^\/[A-Za-z]:/.test(p) ? p.slice(1) : p;
   }
