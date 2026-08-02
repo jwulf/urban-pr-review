@@ -2,7 +2,25 @@
 // fresh schema (the runtime re-applies db/migrations on boot). Deletes the sqlite file and its
 // WAL/SHM sidecars for the `app` source declared in nano.app.json.
 const url = Deno.env.get("NANO_APP_DB_URL") ?? "file:./app.db";
-const path = url.replace(/^file:/, "");
+
+/** Resolve a `file:` datasource URL to a filesystem path. Handles both the opaque
+ *  form (`file:./app.db`, `file:/abs/app.db`) and the authority form
+ *  (`file:///abs/app.db`), and refuses non-`file:` schemes. */
+function fileUrlToPath(u: string): string {
+  if (!u.startsWith("file:")) {
+    throw new Error(`purge only supports file: datasource URLs, got: ${u}`);
+  }
+  // Authority form (`file://host/path` or `file:///path`) parses cleanly as a URL.
+  if (u.startsWith("file://")) {
+    const p = decodeURIComponent(new URL(u).pathname);
+    // Windows drive fixup: `/C:/x` -> `C:/x`.
+    return /^\/[A-Za-z]:/.test(p) ? p.slice(1) : p;
+  }
+  // Opaque form: everything after the scheme is the (possibly relative) path.
+  return u.slice("file:".length);
+}
+
+const path = fileUrlToPath(url);
 
 for (const suffix of ["", "-wal", "-shm"]) {
   try {
