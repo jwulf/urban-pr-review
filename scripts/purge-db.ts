@@ -5,6 +5,16 @@ import { rmSync } from "node:fs";
 
 const url = process.env.NANO_APP_DB_URL ?? "file:./app.db";
 
+/** Percent-decode a path, turning `decodeURIComponent`'s opaque `URIError`
+ *  (malformed escape, or a literal `%` in a filename) into a clear message. */
+function decodePath(p: string, url: string): string {
+  try {
+    return decodeURIComponent(p);
+  } catch {
+    throw new Error(`purge could not decode the path in datasource URL: ${url}`);
+  }
+}
+
 /** Resolve a `file:` datasource URL to a filesystem path. Handles both the opaque
  *  form (`file:./app.db`, `file:/abs/app.db`) and the authority form
  *  (`file:///abs/app.db`), and refuses non-`file:` schemes. */
@@ -20,14 +30,14 @@ function fileUrlToPath(u: string): string {
         `purge does not support remote file hosts, got host "${parsed.hostname}" in: ${u}`,
       );
     }
-    const p = decodeURIComponent(parsed.pathname);
+    const p = decodePath(parsed.pathname, u);
     // Windows drive fixup: `/C:/x` -> `C:/x`.
     return /^\/[A-Za-z]:/.test(p) ? p.slice(1) : p;
   }
   // Opaque form: everything after the scheme is the (possibly relative) path.
   // Decode percent-escapes too (mirroring the authority branch above), so an
   // encoded path like `file:./my%20app.db` resolves to `./my app.db`.
-  const p = decodeURIComponent(u.slice("file:".length));
+  const p = decodePath(u.slice("file:".length), u);
   // Windows single-slash absolute form (`file:/C:/x`): strip the leading slash.
   return /^\/[A-Za-z]:/.test(p) ? p.slice(1) : p;
 }

@@ -49,7 +49,7 @@ async function pollLoop(): Promise<void> {
   try {
     if (app.data) await pollOnce(app.data, engine, GITHUB_TOKEN);
   } catch (err) {
-    console.error("poll error:", err instanceof Error ? err.message : err);
+    console.error("poll error:", err);
   }
   if (!shuttingDown) pollTimer = setTimeout(() => void pollLoop(), POLL_MS);
 }
