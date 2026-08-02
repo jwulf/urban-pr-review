@@ -1,7 +1,9 @@
 // pr.finalize — the PR has converged. Record the final round and close the PR out.
 import type { AppJobHandler } from "@nanobpm/urban";
 
-interface In {
+// Extends Record so the declared fields are typed while the job may still carry
+// other process variables (e.g. io.nanobpm.agentResult, read by transcriptOf).
+interface In extends Record<string, unknown> {
   prKey: string;
   round: number;
   summary?: string;
@@ -13,8 +15,8 @@ function transcriptOf(vars: Record<string, unknown>): string | null {
   return typeof env?.output === "string" ? env.output : null;
 }
 
-const handler: AppJobHandler = async (job, app) => {
-  const { prKey, round, summary = "" } = job.variables as unknown as In;
+const handler: AppJobHandler<In> = async (job, app) => {
+  const { prKey, round, summary = "" } = job.variables;
   const now = new Date().toISOString();
 
   await app.data.table("rounds", "id").insert({

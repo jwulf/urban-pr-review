@@ -3,11 +3,15 @@
     "lib": ["deno.window", "deno.ns"]
   },
   "imports": {
-    "@nanobpm/urban": "npm:@nanobpm/urban@^0.11.1"
+    "@nanobpm/urban": "npm:@nanobpm/urban@^0.14.0"
   },
   "tasks": {
     "start": "deno run --allow-net --allow-read --allow-write --allow-env main.ts",
     "purge": "deno run --allow-read --allow-write --allow-env scripts/purge-db.ts",
+    "check": "deno run -A npm:@nanobpm/urban@^0.14.0 check",
+    "gen": "deno run -A npm:@nanobpm/urban@^0.14.0 gen",
+    "gen:check": "deno run -A npm:@nanobpm/urban@^0.14.0 gen --check",
+    "dev": "deno run -A npm:@nanobpm/urban@^0.14.0 dev",
     "compile": "deno compile --allow-net --allow-read --allow-write --allow-env -o dist/urban-pr-review main.ts"
   }
 }
