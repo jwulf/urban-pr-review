@@ -4,12 +4,22 @@
 // `escalationId` for the UI.
 import type { AppJobHandler } from "@nanobpm/urban";
 
-interface In {
+// Extends Record so the declared fields are typed while the job may still carry
+// other process variables (e.g. io.nanobpm.agentResult, read by transcriptOf).
+interface In extends Record<string, unknown> {
   prKey: string;
   round: number;
   status?: string;
   summary?: string;
   question?: string;
+}
+
+// A string variable, or undefined when it is absent, empty, or whitespace-only.
+// The write boundary owns *type* defaults (undefined -> column DEFAULT/NULL); this
+// owns a *domain* rule: a blank prompt or status counts as "missing" so it can't
+// reach the escalation control flow or the UI answer form.
+function nonBlank(v: string | undefined): string | undefined {
+  return v != null && v.trim() !== "" ? v : undefined;
 }
 
 const AGENT_RESULT_KEY = "io.nanobpm.agentResult";
@@ -18,9 +28,15 @@ function transcriptOf(vars: Record<string, unknown>): string | null {
   return typeof env?.output === "string" ? env.output : null;
 }
 
-const handler: AppJobHandler = async (job, app) => {
-  const { prKey, round, status = "needs_input", summary = "", question = "" } =
-    job.variables as unknown as In;
+const handler: AppJobHandler<In> = async (job, app) => {
+  const { prKey, round, summary } = job.variables;
+  // `status` drives the escalation kind (control flow); a blank/absent status is an
+  // unclassified escalation -> a question needing input. `question` is denormalised
+  // onto pull_requests below and bound by the UI answer form, so it must be a
+  // concrete, non-blank value. `summary` is left undefined so the write boundary
+  // omits it and the nullable column stays NULL.
+  const status = nonBlank(job.variables.status) ?? "needs_input";
+  const question = nonBlank(job.variables.question) ?? "(no question provided)";
   const kind = status === "needs_input" ? "question" : "blocker";
   const now = new Date().toISOString();
   const transcript = transcriptOf(job.variables);
@@ -38,7 +54,7 @@ const handler: AppJobHandler = async (job, app) => {
     pr_key: prKey,
     round_no: round,
     kind,
-    question: question || "(no question provided)",
+    question,
     transcript,
     status: "open",
     asked_at: now,
@@ -48,7 +64,7 @@ const handler: AppJobHandler = async (job, app) => {
     current_round: round,
     updated_at: now,
     open_escalation_id: Number(escalationId),
-    open_escalation_question: question || "(no question provided)",
+    open_escalation_question: question,
   });
 
   return { escalationId: Number(escalationId) };
