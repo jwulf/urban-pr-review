@@ -18,6 +18,9 @@ const handler: ActionHandler = async ({ body }, app) => {
   if (!processInstanceKey && !prKey) {
     return { status: 400, body: { error: "processInstanceKey or prKey is required" } };
   }
+  if (processInstanceKey && prKey) {
+    return { status: 400, body: { error: "provide exactly one of processInstanceKey or prKey" } };
+  }
   const r = await cancelRun(app.data, app.engine, { processInstanceKey, prKey });
   const status = r.ok ? 200 : r.reason?.startsWith("PR already") ? 409 : 404;
   return { status, body: r };
