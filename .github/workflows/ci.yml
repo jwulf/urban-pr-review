@@ -40,4 +40,4 @@ jobs:
           deno-version: v2.x
 
       - name: Typecheck (Deno)
-        run: deno check main.ts workers/**/*.ts actions/**/*.ts
+        run: deno check main.ts 'workers/**/*.ts' 'actions/**/*.ts'
