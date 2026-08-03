@@ -32,6 +32,10 @@ const REVIEW_PROMPT = await (async () => {
 
 const now = () => new Date().toISOString();
 
+/** A PR is "done" in exactly these two states; everything else (converging, waiting_review,
+ * escalated) is in flight. The status endpoint and the cancel guard both key off this. */
+export const TERMINAL_STATUSES: readonly string[] = ["converged", "abandoned"];
+
 interface PullRequest {
   pr_key: string;
   repo: string;
@@ -95,7 +99,7 @@ export function parsePr(input: string): ParsedPr | null {
 export async function submitPr(data: DataLayer, engine: EngineClient, parsed: ParsedPr) {
   const table = prs(data);
   const existing = await table.get(parsed.prKey);
-  if (existing && !["converged", "abandoned"].includes(existing.status)) {
+  if (existing && !TERMINAL_STATUSES.includes(existing.status)) {
     return { prKey: parsed.prKey, alreadyRunning: true };
   }
   const ts = now();
@@ -166,20 +170,41 @@ export async function answerEscalation(
   return { ok: true, escalationId: open.id };
 }
 
+/** How a caller identifies the run to cancel: by its engine `processInstanceKey` or, more
+ * ergonomically, by the `prKey` the status endpoint reports. At least one is required. */
+export interface CancelSelector {
+  processInstanceKey?: string;
+  prKey?: string;
+}
+
 /** Cancel a PR's running convergence instance and mark it abandoned. Terminating the engine
  * instance emits no completion event (no worker runs), so the app-tier flips the PR's status
- * here — the same place ADR 0040 puts app-owned rest state. */
-export async function cancelRun(data: DataLayer, engine: EngineClient, processInstanceKey: string) {
-  const [pr] = await prs(data).find({ process_key: processInstanceKey });
-  try {
-    await engine.cancelInstance({ processInstanceKey });
-  } catch (err) {
-    // The instance may already be gone (converged/cancelled) — still reconcile the app row so
-    // a stale "converging" PR can't linger in the UI.
-    console.warn(`[cancel] engine cancel for ${processInstanceKey}: ${err}`);
+ * here — the same place ADR 0040 puts app-owned rest state. Accepts either selector; a PR
+ * already in a terminal state is left untouched so a stale cancel can't overwrite a `converged`
+ * outcome with `abandoned`. */
+export async function cancelRun(data: DataLayer, engine: EngineClient, selector: CancelSelector) {
+  const { processInstanceKey, prKey } = selector;
+  const table = prs(data);
+  const pr = prKey
+    ? await table.get(prKey)
+    : processInstanceKey
+    ? (await table.find({ process_key: processInstanceKey }))[0]
+    : undefined;
+  if (pr && TERMINAL_STATUSES.includes(pr.status)) {
+    return { ok: false, reason: `PR already ${pr.status}`, prKey: pr.pr_key };
+  }
+  const instanceKey = pr?.process_key ?? processInstanceKey ?? null;
+  if (instanceKey) {
+    try {
+      await engine.cancelInstance({ processInstanceKey: instanceKey });
+    } catch (err) {
+      // The instance may already be gone (converged/cancelled) — still reconcile the app row so
+      // a stale "converging" PR can't linger in the UI.
+      console.warn(`[cancel] engine cancel for ${instanceKey}: ${err}`);
+    }
   }
   if (pr) {
-    await prs(data).update(pr.pr_key, {
+    await table.update(pr.pr_key, {
       status: "abandoned",
       updated_at: now(),
       open_escalation_id: null,
@@ -187,7 +212,45 @@ export async function cancelRun(data: DataLayer, engine: EngineClient, processIn
     });
     return { ok: true, prKey: pr.pr_key };
   }
-  return { ok: false, reason: "no PR for that instance" };
+  return { ok: false, reason: "no PR for that selector" };
+}
+
+/** A PR currently in flight, as reported by the status endpoint. */
+export interface ActivePr {
+  prKey: string;
+  repo: string;
+  number: number;
+  url: string;
+  title: string | null;
+  status: string;
+  round: number;
+  processKey: string | null;
+  waitingSince: string | null;
+  openEscalation: string | null;
+  updatedAt: string;
+}
+
+/** Every tracked PR not in a terminal state (converged/abandoned), newest-updated first. Backs
+ * the GET status endpoint so an operator or an external harness can see what is in flight
+ * without reading the datasource directly. */
+export async function activePrs(data: DataLayer): Promise<ActivePr[]> {
+  const all = await prs(data).all();
+  return all
+    .filter((p) => !TERMINAL_STATUSES.includes(p.status))
+    .sort((a, b) => (a.updated_at < b.updated_at ? 1 : a.updated_at > b.updated_at ? -1 : 0))
+    .map((p) => ({
+      prKey: p.pr_key,
+      repo: p.repo,
+      number: p.number,
+      url: p.url,
+      title: p.title ?? null,
+      status: p.status,
+      round: p.current_round,
+      processKey: p.process_key ?? null,
+      waitingSince: p.waiting_since ?? null,
+      openEscalation: p.open_escalation_question ?? null,
+      updatedAt: p.updated_at,
+    }));
 }
 
 /** One review-ready poll pass (SPEC §10): for every PR waiting on a review, fetch its GitHub

@@ -51,6 +51,11 @@
       "module": "actions/cancel.ts"
     },
     {
+      "path": "/app/status",
+      "module": "actions/status.ts",
+      "method": "GET"
+    },
+    {
       "path": "/app/actions/message",
       "module": "actions/message.ts"
     },
