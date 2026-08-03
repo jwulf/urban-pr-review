@@ -1,3 +1,10 @@
+## [0.3.1](https://github.com/jwulf/urban-pr-review/compare/v0.3.0...v0.3.1) (2026-08-03)
+
+
+### Bug Fixes
+
+* **deps:** bump @nanobpm/urban to ^0.17.1 ([#11](https://github.com/jwulf/urban-pr-review/issues/11)) ([00d6a68](https://github.com/jwulf/urban-pr-review/commit/00d6a68e39d01369bd50784c846e97651a0022ac))
+
 # [0.3.0](https://github.com/jwulf/urban-pr-review/compare/v0.2.1...v0.3.0) (2026-08-03)
 
 
