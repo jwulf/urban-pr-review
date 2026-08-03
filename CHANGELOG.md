@@ -1,3 +1,10 @@
+# [0.4.0](https://github.com/jwulf/urban-pr-review/compare/v0.3.1...v0.4.0) (2026-08-03)
+
+
+### Features
+
+* GET /app/status + cancel-by-prKey affordances ([#12](https://github.com/jwulf/urban-pr-review/issues/12)) ([9fbe066](https://github.com/jwulf/urban-pr-review/commit/9fbe066992b18529b485324b476ef031b4814565))
+
 ## [0.3.1](https://github.com/jwulf/urban-pr-review/compare/v0.3.0...v0.3.1) (2026-08-03)
 
 
