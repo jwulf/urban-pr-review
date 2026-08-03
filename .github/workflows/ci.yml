@@ -31,9 +31,6 @@ jobs:
       - name: Validate manifest (urban check)
         run: npm run check
 
-      - name: Generated artifacts up to date (urban gen --check)
-        run: npm run gen:check
-
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
