@@ -64,8 +64,8 @@ npm start              # → http://localhost:8090
 That deploys `convergence-loop.bpmn`, starts the app-hosted record workers, serves
 the web UI at **<http://localhost:8090>**, and runs the review-ready poller. See
 [Run](#run) and [Configuration](#configuration) for the authoritative port and
-env-var details (`PORT`, `GITHUB_TOKEN` to enable the poller, `NANOBPMN_BASE_URL`
-for a non-default gateway, etc.).
+env-var details (`NANO_PR_GITHUB_TRANSPORT`/`GITHUB_TOKEN` for the poller,
+`NANOBPMN_BASE_URL` for a non-default gateway, etc.).
 
 ### 3. Submit a PR
 
@@ -215,7 +215,8 @@ with `openDomain("app")`.
 | `PORT` | `8090` | app HTTP port |
 | `NANO_APP_DB_URL` | `file:./app.db` | sqlite datasource |
 | `NANOBPMN_BASE_URL` | `http://localhost:8080` | engine base URL |
-| `GITHUB_TOKEN` | — | GitHub API for the poller (idle if unset) |
+| `NANO_PR_GITHUB_TRANSPORT` | `auto` | how the poller reads GitHub reviews: `gh` (host `gh` CLI — reaches every repo you can, no PAT needed), `token` (`GITHUB_TOKEN` over HTTP), or `auto` (prefer `gh`, else token) |
+| `GITHUB_TOKEN` | — | token for the `token`/`auto` transport (idle if no transport is usable) |
 | `NANO_PR_POLL_MS` | `60000` | review-ready poll interval |
 | `NANO_PR_MAX_ROUNDS` | `10` | escalate after N rounds |
 | `NANO_PR_WEBHOOK_SECRET` | — | shared secret for `POST /hooks/submit` (`X-Hook-Secret`) |

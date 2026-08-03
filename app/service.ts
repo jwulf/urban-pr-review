@@ -8,6 +8,7 @@
 // Data access goes through the record-oriented gateway (`data.table<T>(name, pk)` — the RAD
 // `Table<T>` surface), not hand-written SQL. Row shapes are declared inline here.
 import type { DataLayer, EngineClient } from "@nanobpm/urban";
+import { fetchPrReviews } from "./github.ts";
 
 /** The BPMN process this app drives (see `resources/processes/convergence-loop.bpmn`). */
 export const PROCESS_ID = "convergence-loop";
@@ -190,21 +191,16 @@ export async function cancelRun(data: DataLayer, engine: EngineClient, processIn
 }
 
 /** One review-ready poll pass (SPEC §10): for every PR waiting on a review, fetch its GitHub
- * reviews and, on a fresh one, correlate a `review-ready` message to resume the loop. */
+ * reviews (via the host `gh` CLI or a token — see `app/github.ts`) and, on a fresh one,
+ * correlate a `review-ready` message to resume the loop. */
 export async function pollOnce(data: DataLayer, engine: EngineClient, token: string) {
-  if (!token) return; // no token → poller idles (webhook/manual still work)
   const waiting = await prs(data).find({ status: "waiting_review" });
-  const authHeader = "Bearer ".concat(token);
   for (const pr of waiting) {
     const { repo, number, pr_key: prKey } = pr;
     const lastId = pr.last_review_id ?? 0;
     try {
-      const r = await fetch(
-        `https://api.github.com/repos/${repo}/pulls/${number}/reviews?per_page=100`,
-        { headers: { authorization: authHeader, accept: "application/vnd.github+json" } },
-      );
-      if (!r.ok) continue;
-      const reviews = (await r.json()) as Array<{ id: number; state: string; submitted_at?: string }>;
+      const reviews = await fetchPrReviews(repo, number, token);
+      if (reviews === null) return; // no usable transport (no gh, no token) → idle
       const fresh = reviews
         .filter((rv) =>
           rv.id > lastId && rv.submitted_at && (!pr.waiting_since || rv.submitted_at >= pr.waiting_since)
