@@ -64,7 +64,7 @@ npm start              # → http://localhost:8090
 That deploys `convergence-loop.bpmn`, starts the app-hosted record workers, serves
 the web UI at **<http://localhost:8090>**, and runs the review-ready poller. See
 [Run](#run) and [Configuration](#configuration) for the authoritative port and
-env-var details (`PORT`, `NANO_PR_GITHUB_TRANSPORT`/`GITHUB_TOKEN` for the poller,
+env-var details (`NANO_PR_GITHUB_TRANSPORT`/`GITHUB_TOKEN` for the poller,
 `NANOBPMN_BASE_URL` for a non-default gateway, etc.).
 
 ### 3. Submit a PR

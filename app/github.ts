@@ -87,6 +87,6 @@ export async function fetchPrReviews(
   const r = await fetch(`https://api.github.com/${path}`, {
     headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
   });
-  if (!r.ok) throw new Error(`github ${r.status}`);
+  if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
   return (await r.json()) as GhReview[];
 }

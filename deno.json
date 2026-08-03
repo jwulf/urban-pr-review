@@ -10,7 +10,7 @@
   },
   "tasks": {
     "start": "deno run --allow-net --allow-read --allow-write --allow-run=gh --allow-env main.ts",
-    "purge": "deno run --allow-read --allow-write --allow-run=gh --allow-env scripts/purge-db.ts",
+    "purge": "deno run --allow-read --allow-write --allow-env scripts/purge-db.ts",
     "check": "deno run -A npm:@nanobpm/urban@^0.16.1 check",
     "gen": "deno run -A npm:@nanobpm/urban@^0.16.1 gen",
     "gen:check": "deno run -A npm:@nanobpm/urban@^0.16.1 gen --check",
