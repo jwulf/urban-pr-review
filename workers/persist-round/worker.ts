@@ -5,7 +5,9 @@
 // `Table<T>` surface — `rounds.insert(...)` / `pull_requests.update(...)`, not hand-written SQL.
 import type { AppJobHandler } from "@nanobpm/urban";
 
-interface In {
+// Extends Record so the declared fields are typed while the job may still carry
+// other process variables (e.g. io.nanobpm.agentResult, read by transcriptOf).
+interface In extends Record<string, unknown> {
   prKey: string;
   round: number;
   status?: string;
@@ -20,8 +22,11 @@ function transcriptOf(vars: Record<string, unknown>): string | null {
   return typeof env?.output === "string" ? env.output : null;
 }
 
-const handler: AppJobHandler = async (job, app) => {
-  const { prKey, round, status = "addressed", summary = "" } = job.variables as unknown as In;
+const handler: AppJobHandler<In> = async (job, app) => {
+  // This worker is the "addressed" path, so `status` resolves to that domain value.
+  // `summary` is left undefined when absent: the write boundary omits it so the
+  // nullable `rounds.summary` column stays NULL rather than being coerced to "".
+  const { prKey, round, status = "addressed", summary } = job.variables;
   const now = new Date().toISOString();
 
   await app.data.table("rounds", "id").insert({

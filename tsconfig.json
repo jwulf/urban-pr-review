@@ -7,18 +7,44 @@
     "noEmit": true,
     "strict": true,
     "skipLibCheck": true,
-    "lib": ["esnext", "dom"],
-    "baseUrl": ".",
+    "lib": [
+      "esnext",
+      "dom"
+    ],
     "paths": {
-      "@nanobpm/worker": ["./nano-generated/workers.ts"],
-      "@nanobpm/messages": ["./nano-generated/messages.ts"],
-      "@nanobpm/meta": ["./nano-generated/meta.ts"],
-      "@nanobpm/llm": ["./nano-generated/llm-worker.ts"],
-      "@nanobpm/data": ["./nano-generated/data-sdk.ts"],
-      "@nanobpm/domain": ["./nano-generated/domain.ts"],
-      "@lib/*": ["./lib/*"]
+      "@nanobpm/worker": [
+        "./nano-generated/workers.ts"
+      ],
+      "@nanobpm/messages": [
+        "./nano-generated/messages.ts"
+      ],
+      "@nanobpm/meta": [
+        "./nano-generated/meta.ts"
+      ],
+      "@nanobpm/llm": [
+        "./nano-generated/llm-worker.ts"
+      ],
+      "@nanobpm/data": [
+        "./nano-generated/data-sdk.ts"
+      ],
+      "@nanobpm/domain": [
+        "./nano-generated/domain.ts"
+      ],
+      "@lib/*": [
+        "./lib/*"
+      ]
     }
   },
-  "include": ["main.ts", "workers/**/*.ts", "lib/**/*.ts", "src/**/*.ts"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "main.ts",
+    "workers/**/*.ts",
+    "lib/**/*.ts",
+    "src/**/*.ts",
+    "scripts/**/*.ts",
+    "actions/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }

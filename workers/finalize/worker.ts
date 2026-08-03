@@ -16,7 +16,10 @@ function transcriptOf(vars: Record<string, unknown>): string | null {
 }
 
 const handler: AppJobHandler<In> = async (job, app) => {
-  const { prKey, round, summary = "" } = job.variables;
+  // `summary` is left undefined when absent so the write boundary omits it: the
+  // nullable `rounds.summary` stays NULL and `pull_requests.outcome` is untouched
+  // rather than being coerced to "".
+  const { prKey, round, summary } = job.variables;
   const now = new Date().toISOString();
 
   await app.data.table("rounds", "id").insert({

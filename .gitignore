@@ -11,3 +11,6 @@ app.db-*
 # Deps / build
 node_modules/
 dist/
+
+# macOS
+.DS_Store

@@ -28,20 +28,22 @@
     "start": "node --experimental-strip-types main.ts",
     "purge": "node --experimental-strip-types scripts/purge-db.ts",
     "check": "urban check",
+    "typecheck": "tsc --noEmit",
     "gen": "urban gen",
     "gen:check": "urban gen --check",
     "dev": "urban dev",
     "compile": "deno task compile"
   },
   "dependencies": {
-    "@nanobpm/urban": "^0.14.0"
+    "@nanobpm/urban": "^0.16.1"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",
     "@semantic-release/git": "^10.0.1",
+    "@semantic-release/npm": "^13.1.5",
     "@types/node": "^22",
     "semantic-release": "^24.2.9",
-    "@semantic-release/npm": "^13.1.5"
+    "typescript": "^5.6.0"
   },
   "overrides": {
     "@semantic-release/npm": "^13.1.5"
