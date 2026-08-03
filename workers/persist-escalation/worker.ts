@@ -18,8 +18,8 @@ interface In extends Record<string, unknown> {
 // The write boundary owns *type* defaults (undefined -> column DEFAULT/NULL); this
 // owns a *domain* rule: a blank prompt or status counts as "missing" so it can't
 // reach the escalation control flow or the UI answer form.
-function nonBlank(v: string | undefined): string | undefined {
-  return v != null && v.trim() !== "" ? v : undefined;
+function nonBlank(v: unknown): string | undefined {
+  return typeof v === "string" && v.trim() !== "" ? v : undefined;
 }
 
 const AGENT_RESULT_KEY = "io.nanobpm.agentResult";
