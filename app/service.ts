@@ -192,7 +192,7 @@ export async function cancelRun(data: DataLayer, engine: EngineClient, selector:
     ? (await table.find({ process_key: processInstanceKey }))[0]
     : undefined;
   if (pr && TERMINAL_STATUSES.includes(pr.status)) {
-    return { ok: false, reason: `PR already ${pr.status}`, prKey: pr.pr_key };
+    return { ok: false, kind: "terminal", reason: `PR already ${pr.status}`, prKey: pr.pr_key };
   }
   const instanceKey = pr?.process_key ?? processInstanceKey ?? null;
   if (instanceKey) {
@@ -213,7 +213,7 @@ export async function cancelRun(data: DataLayer, engine: EngineClient, selector:
     });
     return { ok: true, prKey: pr.pr_key };
   }
-  return { ok: false, reason: "no PR for that selector" };
+  return { ok: false, kind: "not_found", reason: "no PR for that selector" };
 }
 
 /** A PR currently in flight, as reported by the status endpoint. */

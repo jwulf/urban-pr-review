@@ -22,8 +22,8 @@ const handler: ActionHandler = async ({ body }, app) => {
     return { status: 400, body: { error: "provide exactly one of processInstanceKey or prKey" } };
   }
   const r = await cancelRun(app.data, app.engine, { processInstanceKey, prKey });
-  const status = r.ok ? 200 : r.reason?.startsWith("PR already") ? 409 : 404;
-  return { status, body: r };
+  if (r.ok) return { status: 200, body: r };
+  return { status: r.kind === "terminal" ? 409 : 404, body: r };
 };
 
 export default handler;
