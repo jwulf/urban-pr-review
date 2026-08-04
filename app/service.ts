@@ -413,6 +413,32 @@ async function isDepMerged(data: DataLayer, depKey: string, token: string): Prom
   return st?.merged ?? false;
 }
 
+/** Flip a PR into the transient `merging` status and publish the correlating message, reverting
+ * to `prevStatus` if the publish fails. `merging` is deliberately a status no poll branch scans
+ * (so a slow pass can't double-signal), which means a publish failure *after* the flip would
+ * otherwise wedge the PR there forever — the next pass would never pick it back up. Reverting on
+ * failure keeps the PR on a pollable status so the next pass retries. Single source of truth for
+ * the flip-then-publish handoff shared by all merge-stage waits below. */
+async function flipToMergingThenPublish(
+  data: DataLayer,
+  engine: EngineClient,
+  prKey: string,
+  prevStatus: string,
+  message: Parameters<EngineClient["publishMessage"]>[0],
+) {
+  await prs(data).update(prKey, { status: "merging", updated_at: now() });
+  try {
+    await engine.publishMessage(message);
+  } catch (err) {
+    try {
+      await prs(data).update(prKey, { status: prevStatus, updated_at: now() });
+    } catch (revertErr) {
+      console.error(`[poller] revert ${prKey} -> ${prevStatus} failed: ${revertErr}`);
+    }
+    throw err;
+  }
+}
+
 /** Merge-stage poll pass (SPEC §11). Three durable waits, each keyed off the PR's `status`, are
  * advanced by correlating a message — mirroring the review-ready pattern so the process owns
  * the wait and this glue only signals when a GitHub condition is met:
@@ -420,7 +446,8 @@ async function isDepMerged(data: DataLayer, depKey: string, token: string): Prom
  *   • waiting_merge → GitHub settled the PR as mergeable/blocked  → `merge-ready` {mergeState}
  *   • queued        → the queued PR has landed on GitHub          → `merge-landed`
  * On publish we flip status to the transient `merging` (which no branch scans) so a slow pass
- * can't double-signal, exactly as `pollReviews` flips to `converging`. */
+ * can't double-signal, exactly as `pollReviews` flips to `converging`; `flipToMergingThenPublish`
+ * reverts the flip if the publish fails so a failed handoff can't wedge the PR. */
 async function pollMerges(data: DataLayer, engine: EngineClient, token: string) {
   // 1) Dependencies merged?
   for (const pr of await prs(data).find({ status: "waiting_deps" })) {
@@ -435,8 +462,11 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
         }
       }
       if (!allMerged) continue;
-      await prs(data).update(prKey, { status: "merging", updated_at: now() });
-      await engine.publishMessage({ name: "deps-cleared", correlationKey: prKey, variables: {} });
+      await flipToMergingThenPublish(data, engine, prKey, "waiting_deps", {
+        name: "deps-cleared",
+        correlationKey: prKey,
+        variables: {},
+      });
       console.log(`[poller] deps cleared -> ${prKey}`);
     } catch (err) {
       console.error(`[poller] deps ${prKey}: ${err}`);
@@ -451,15 +481,17 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
       if (st === null) continue; // no transport → skip this PR (others may still advance)
       if (st.merged) {
         // Landed out-of-band (someone merged it) — skip straight to done.
-        await prs(data).update(prKey, { status: "merging", updated_at: now() });
-        await engine.publishMessage({ name: "merge-landed", correlationKey: prKey, variables: {} });
+        await flipToMergingThenPublish(data, engine, prKey, "waiting_merge", {
+          name: "merge-landed",
+          correlationKey: prKey,
+          variables: {},
+        });
         console.log(`[poller] already merged -> ${prKey}`);
         continue;
       }
       const verdict = classifyMergeability(st);
       if (verdict === "waiting") continue; // GitHub still computing / checks pending
-      await prs(data).update(prKey, { status: "merging", updated_at: now() });
-      await engine.publishMessage({
+      await flipToMergingThenPublish(data, engine, prKey, "waiting_merge", {
         name: "merge-ready",
         correlationKey: prKey,
         variables: { mergeState: verdict },
@@ -477,8 +509,11 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
       const st = await fetchPrState(repo, number, token);
       if (st === null) continue; // no transport → skip this PR (others may still advance)
       if (!st.merged) continue; // still in the queue
-      await prs(data).update(prKey, { status: "merging", updated_at: now() });
-      await engine.publishMessage({ name: "merge-landed", correlationKey: prKey, variables: {} });
+      await flipToMergingThenPublish(data, engine, prKey, "queued", {
+        name: "merge-landed",
+        correlationKey: prKey,
+        variables: {},
+      });
       console.log(`[poller] queued PR landed -> ${prKey}`);
     } catch (err) {
       console.error(`[poller] queued ${prKey}: ${err}`);

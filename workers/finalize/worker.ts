@@ -47,8 +47,22 @@ const handler: AppJobHandler<In> = async (job, app) => {
   let status = "converged";
   if (AUTO_MERGE) {
     try {
-      await startMerge(app.data, app.engine, { repo, number: prNumber, url: prUrl, prKey, round });
-      status = "waiting_deps";
+      const { mergeProcessKey } = await startMerge(app.data, app.engine, {
+        repo,
+        number: prNumber,
+        url: prUrl,
+        prKey,
+        round,
+      });
+      // `startMerge` can resolve without throwing yet with a null key (mirroring the engine's
+      // nullable `processInstanceKey`). Only park the PR in the merge-stage `waiting_deps` status
+      // when merge-loop is actually running — otherwise leave it terminal as `converged` so a
+      // human/operator can (re)start merge rather than stranding it with no process behind it.
+      if (mergeProcessKey != null) {
+        status = "waiting_deps";
+      } else {
+        app.log("error", `finalize: merge-loop start returned no process key for ${prKey}; leaving PR converged`);
+      }
     } catch (err) {
       app.log("error", `finalize: could not start merge-loop for ${prKey}; leaving PR converged`, {
         err: String(err),
