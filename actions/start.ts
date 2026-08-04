@@ -11,7 +11,8 @@ const handler: ActionHandler = async ({ body }, app) => {
   if (!parsed) {
     return { status: 400, body: { error: "could not parse PR (use owner/repo#123 or a PR URL)" } };
   }
-  return { status: 202, body: await submitPr(app.data, app.engine, parsed) };
+  const dependsOn = Array.isArray(vars.dependsOn) ? vars.dependsOn.map((d) => String(d)) : [];
+  return { status: 202, body: await submitPr(app.data, app.engine, parsed, dependsOn) };
 };
 
 export default handler;

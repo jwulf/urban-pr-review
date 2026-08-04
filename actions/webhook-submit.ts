@@ -10,10 +10,11 @@ const handler: ActionHandler = async ({ req, body }, app) => {
   if (WEBHOOK_SECRET && req.headers.get("x-hook-secret") !== WEBHOOK_SECRET) {
     return { status: 401, body: { error: "unauthorized" } };
   }
-  const b = (body ?? {}) as { url?: unknown; pr?: unknown };
+  const b = (body ?? {}) as { url?: unknown; pr?: unknown; dependsOn?: unknown };
   const parsed = parsePr(String((b.url ?? b.pr ?? "") as string));
   if (!parsed) return { status: 400, body: { error: "could not parse PR url" } };
-  return { status: 202, body: await submitPr(app.data, app.engine, parsed) };
+  const dependsOn = Array.isArray(b.dependsOn) ? b.dependsOn.map((d) => String(d)) : [];
+  return { status: 202, body: await submitPr(app.data, app.engine, parsed, dependsOn) };
 };
 
 export default handler;

@@ -174,6 +174,34 @@ zero cost when there's nothing to do.
 - **Poller** watches `waiting_review` PRs and publishes `review-ready` when a new
   review lands — no GitHub webhook needed (works behind NAT).
 
+### Merge stage
+
+With `NANO_PR_AUTO_MERGE` on (the default), a converged PR does not stop — the
+`pr.finalize` worker starts a second durable process, `merge-loop`, which merges
+it for you:
+
+```
+ converged ──► finalize ──► createProcessInstance ──► merge-loop (BPMN)
+                                                        │
+   wait: deps merged ──► arm ──► wait: mergeable ──┬─ ready ─► merge ──┬─ merged ─► mark merged ─► done
+   (Depends-on PRs)                                │                   ├─ queued ─► wait: landed ─► mark merged
+                                                   └─ conflict/blocked │
+                                                        ▼              └─ blocked ─► escalate ─► wait: answered ┐
+                                                     escalate ─► wait: answered ───────────────────────────────┘
+                                                                          (re-arm and retry)
+```
+
+- **Dependencies** — a PR can declare `Depends-on: owner/repo#N` (in the PR body
+  or the `dependsOn` submit field); `merge-loop` parks at *wait: deps merged*
+  until every dependency has landed. The poller advances it (`deps-cleared`).
+- **Strategy is auto-detected** — `pr.merge` attempts the merge; if the branch
+  requires a **merge queue**, GitHub enqueues it and the process waits for
+  `merge-landed`; otherwise it's a straight squash/merge/rebase.
+- **Blocks escalate** — a conflict or a failing required gate raises the same
+  escalation machinery as the review stage; answer it in the UI and the process
+  re-arms and retries. Set `NANO_PR_AUTO_MERGE=0` to stop at `converged`
+  (review-only mode).
+
 ## Layout
 
 | path | purpose |
@@ -182,7 +210,9 @@ zero cost when there's nothing to do.
 | `main.ts` | entrypoint: deploy, start workers, serve the page runtime + action overrides, run poller |
 | `lib/nano.ts` | deploy/worker bootstrap helpers (`@lib/nano.ts`) |
 | `resources/processes/convergence-loop.bpmn` | the durable convergence process |
+| `resources/processes/merge-loop.bpmn` | the durable merge process (deps → merge → escalate) |
 | `db/migrations/001_init.sql` | `pull_requests` / `rounds` / `escalations` |
+| `db/migrations/004_merge.sql` | `merged_at` column + `pr_dependencies` / `merges` |
 | `workers/*/worker.ts` | app-hosted record workers |
 | `prompts/review-round.md` | the agent's instructions (carried in the job payload) |
 | `components/review-round.json` | Zeebe element template for the agent task |
@@ -220,6 +250,9 @@ with `openDomain("app")`.
 | `NANO_PR_POLL_MS` | `60000` | review-ready poll interval |
 | `NANO_PR_MAX_ROUNDS` | `10` | escalate after N rounds |
 | `NANO_PR_WEBHOOK_SECRET` | — | shared secret for `POST /hooks/submit` (`X-Hook-Secret`) |
+| `NANO_PR_AUTO_MERGE` | `1` | after convergence, run the merge stage; `0` = stop at `converged` (review-only) |
+| `NANO_PR_MERGE_METHOD` | `squash` | merge method: `squash`, `merge`, or `rebase` |
+| `NANO_PR_MERGE_ADMIN` | `0` | pass `--admin` to override failing non-required checks (use with care) |
 
 ## Run
 
@@ -242,6 +275,15 @@ curl -XPOST localhost:8090/app/actions/start/convergence-loop \
 
 curl -XPOST localhost:8090/hooks/submit -H 'x-hook-secret: $SECRET' \
   -H 'content-type: application/json' -d '{"url":"owner/repo#123"}'
+```
+
+To make a PR wait for another to merge first, either add a `Depends-on:
+owner/repo#N` line to its PR body, or declare it on submit (`dependsOn` accepts
+`owner/repo#N` refs or PR URLs):
+
+```sh
+curl -XPOST localhost:8090/hooks/submit -H 'content-type: application/json' \
+  -d '{"url":"owner/repo#124","dependsOn":["owner/repo#123"]}'
 ```
 
 ## Purge

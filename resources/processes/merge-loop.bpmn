@@ -1,0 +1,186 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:nano="https://nanobpm.io/schema/shapes/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_urban_pr_merge" targetNamespace="http://nanobpm.io/urban-pr-review">
+  <bpmn:message id="Message_depsCleared" name="deps-cleared">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=prKey" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_mergeReady" name="merge-ready">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=prKey" />
+      <zeebe:properties>
+        <zeebe:property name="io.nanobpm.dataEnvelope.in" value="MergeReady" />
+      </zeebe:properties>
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_mergeLanded" name="merge-landed">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=prKey" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_mergeEscAnswered" name="escalation-answered">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=prKey" />
+      <zeebe:properties>
+        <zeebe:property name="io.nanobpm.dataEnvelope.in" value="MergeEscalationAnswered" />
+      </zeebe:properties>
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:process id="merge-loop" name="PR Merge" isExecutable="true">
+    <bpmn:extensionElements>
+      <nano:shapes>
+        <nano:shape id="MergeArmIn" name="Arm merge poller — input">
+          <nano:extend name="prKey" type="string" />
+        </nano:shape>
+        <nano:shape id="MergeAttemptIn" name="Attempt merge — input">
+          <nano:extend name="prKey" type="string" />
+          <nano:extend name="repo" type="string" />
+          <nano:extend name="prNumber" type="integer" />
+        </nano:shape>
+        <nano:shape id="MergeAttemptOut" name="Attempt merge — result">
+          <nano:extend name="mergeStatus" type="string" />
+          <nano:extend name="status" type="string" optional="true" />
+          <nano:extend name="question" type="string" optional="true" />
+        </nano:shape>
+        <nano:shape id="MergeEscalationIn" name="Record merge escalation — input">
+          <nano:extend name="prKey" type="string" />
+          <nano:extend name="round" type="integer" />
+          <nano:extend name="status" type="string" optional="true" />
+          <nano:extend name="summary" type="string" optional="true" />
+          <nano:extend name="question" type="string" optional="true" />
+        </nano:shape>
+        <nano:shape id="MergeEscalationOut" name="Record merge escalation — result">
+          <nano:extend name="escalationId" type="integer" />
+        </nano:shape>
+        <nano:shape id="MarkMergedIn" name="Mark merged — input">
+          <nano:extend name="prKey" type="string" />
+        </nano:shape>
+        <nano:shape id="MergeReady" name="merge-ready message payload">
+          <nano:extend name="mergeState" type="string" />
+        </nano:shape>
+        <nano:shape id="MergeEscalationAnswered" name="escalation-answered message payload">
+          <nano:extend name="answer" type="string" />
+          <nano:extend name="escalationId" type="integer" />
+        </nano:shape>
+      </nano:shapes>
+    </bpmn:extensionElements>
+    <bpmn:startEvent id="MergeStart" name="PR converged">
+      <bpmn:outgoing>f_m_start</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:intermediateCatchEvent id="wait-deps" name="Wait: dependencies merged">
+      <bpmn:incoming>f_m_start</bpmn:incoming>
+      <bpmn:outgoing>f_m_deps</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="med_depsCleared" messageRef="Message_depsCleared" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:serviceTask id="arm-merge" name="Arm merge poller">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pr.arm-merge" />
+        <zeebe:properties>
+          <zeebe:property name="io.nanobpm.dataEnvelope.in" value="MergeArmIn" />
+        </zeebe:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_m_deps</bpmn:incoming>
+      <bpmn:incoming>f_m_answer</bpmn:incoming>
+      <bpmn:outgoing>f_m_arm</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:intermediateCatchEvent id="wait-mergeable" name="Wait: mergeable">
+      <bpmn:incoming>f_m_arm</bpmn:incoming>
+      <bpmn:outgoing>f_m_ready</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="med_mergeReady" messageRef="Message_mergeReady" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:exclusiveGateway id="gw-mergeable" name="mergeable?" default="f_m_mBlocked">
+      <bpmn:incoming>f_m_ready</bpmn:incoming>
+      <bpmn:outgoing>f_m_mReady</bpmn:outgoing>
+      <bpmn:outgoing>f_m_mBlocked</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="attempt-merge" name="Merge PR">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pr.merge" />
+        <zeebe:properties>
+          <zeebe:property name="io.nanobpm.dataEnvelope.in" value="MergeAttemptIn" />
+          <zeebe:property name="io.nanobpm.dataEnvelope.out" value="MergeAttemptOut" />
+        </zeebe:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_m_mReady</bpmn:incoming>
+      <bpmn:outgoing>f_m_attempt</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="gw-merge" name="merge result?" default="f_m_gBlocked">
+      <bpmn:incoming>f_m_attempt</bpmn:incoming>
+      <bpmn:outgoing>f_m_gMerged</bpmn:outgoing>
+      <bpmn:outgoing>f_m_gQueued</bpmn:outgoing>
+      <bpmn:outgoing>f_m_gBlocked</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:intermediateCatchEvent id="wait-landed" name="Wait: merge queue landed">
+      <bpmn:incoming>f_m_gQueued</bpmn:incoming>
+      <bpmn:outgoing>f_m_landed</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="med_mergeLanded" messageRef="Message_mergeLanded" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:serviceTask id="mark-merged" name="Mark merged">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pr.mark-merged" />
+        <zeebe:properties>
+          <zeebe:property name="io.nanobpm.dataEnvelope.in" value="MarkMergedIn" />
+        </zeebe:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_m_gMerged</bpmn:incoming>
+      <bpmn:incoming>f_m_landed</bpmn:incoming>
+      <bpmn:outgoing>f_m_done</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:endEvent id="MergeEnd" name="Merged">
+      <bpmn:incoming>f_m_done</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:serviceTask id="merge-esc-conflict" name="Escalate: not mergeable">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pr.persist-escalation" />
+        <zeebe:properties>
+          <zeebe:property name="io.nanobpm.dataEnvelope.in" value="MergeEscalationIn" />
+          <zeebe:property name="io.nanobpm.dataEnvelope.out" value="MergeEscalationOut" />
+        </zeebe:properties>
+        <zeebe:ioMapping>
+          <zeebe:input source="=&#34;blocked&#34;" target="status" />
+          <zeebe:input source="=&#34;This PR is not mergeable (state: &#34; + mergeState + &#34;). Resolve the conflict or failing required check on the branch, then reply to retry.&#34;" target="question" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_m_mBlocked</bpmn:incoming>
+      <bpmn:outgoing>f_m_escC</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="merge-esc-attempt" name="Escalate: merge blocked">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pr.persist-escalation" />
+        <zeebe:properties>
+          <zeebe:property name="io.nanobpm.dataEnvelope.in" value="MergeEscalationIn" />
+          <zeebe:property name="io.nanobpm.dataEnvelope.out" value="MergeEscalationOut" />
+        </zeebe:properties>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_m_gBlocked</bpmn:incoming>
+      <bpmn:outgoing>f_m_escA</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:intermediateCatchEvent id="wait-merge-answer" name="Wait: escalation answered">
+      <bpmn:incoming>f_m_escC</bpmn:incoming>
+      <bpmn:incoming>f_m_escA</bpmn:incoming>
+      <bpmn:outgoing>f_m_answer</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="med_mergeEscAnswered" messageRef="Message_mergeEscAnswered" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f_m_start" sourceRef="MergeStart" targetRef="wait-deps" />
+    <bpmn:sequenceFlow id="f_m_deps" sourceRef="wait-deps" targetRef="arm-merge" />
+    <bpmn:sequenceFlow id="f_m_arm" sourceRef="arm-merge" targetRef="wait-mergeable" />
+    <bpmn:sequenceFlow id="f_m_ready" sourceRef="wait-mergeable" targetRef="gw-mergeable" />
+    <bpmn:sequenceFlow id="f_m_mReady" name="ready" sourceRef="gw-mergeable" targetRef="attempt-merge">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=mergeState = "ready"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_m_mBlocked" name="conflict / blocked" sourceRef="gw-mergeable" targetRef="merge-esc-conflict" />
+    <bpmn:sequenceFlow id="f_m_attempt" sourceRef="attempt-merge" targetRef="gw-merge" />
+    <bpmn:sequenceFlow id="f_m_gMerged" name="merged" sourceRef="gw-merge" targetRef="mark-merged">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=mergeStatus = "merged"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_m_gQueued" name="queued" sourceRef="gw-merge" targetRef="wait-landed">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=mergeStatus = "queued"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_m_gBlocked" name="blocked" sourceRef="gw-merge" targetRef="merge-esc-attempt" />
+    <bpmn:sequenceFlow id="f_m_landed" sourceRef="wait-landed" targetRef="mark-merged" />
+    <bpmn:sequenceFlow id="f_m_done" sourceRef="mark-merged" targetRef="MergeEnd" />
+    <bpmn:sequenceFlow id="f_m_escC" sourceRef="merge-esc-conflict" targetRef="wait-merge-answer" />
+    <bpmn:sequenceFlow id="f_m_escA" sourceRef="merge-esc-attempt" targetRef="wait-merge-answer" />
+    <bpmn:sequenceFlow id="f_m_answer" sourceRef="wait-merge-answer" targetRef="arm-merge" />
+  </bpmn:process>
+</bpmn:definitions>

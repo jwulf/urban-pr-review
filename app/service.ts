@@ -8,12 +8,36 @@
 // Data access goes through the record-oriented gateway (`data.table<T>(name, pk)` — the RAD
 // `Table<T>` surface), not hand-written SQL. Row shapes are declared inline here.
 import type { DataLayer, EngineClient } from "@nanobpm/urban";
-import { fetchPrReviews } from "./github.ts";
+import {
+  classifyMergeability,
+  fetchPrMeta,
+  fetchPrReviews,
+  fetchPrState,
+  type MergeMethod,
+} from "./github.ts";
 
-/** The BPMN process this app drives (see `resources/processes/convergence-loop.bpmn`). */
+/** The BPMN process that drives review convergence (`resources/processes/convergence-loop.bpmn`). */
 export const PROCESS_ID = "convergence-loop";
+/** The BPMN process that lands a converged PR (`resources/processes/merge-loop.bpmn`). */
+export const MERGE_PROCESS_ID = "merge-loop";
 /** Round cap before the loop escalates to a human. */
 export const MAX_ROUNDS = Number(process.env.NANO_PR_MAX_ROUNDS ?? 10);
+
+/** Whether a converged PR is automatically driven to merge (the merge-loop). Default on; set
+ * `NANO_PR_AUTO_MERGE=0` to stop at `converged` (review-only mode). */
+export const AUTO_MERGE = !["0", "false", "off", "no"].includes(
+  (process.env.NANO_PR_AUTO_MERGE ?? "1").trim().toLowerCase(),
+);
+/** Merge method passed to `gh pr merge` / the REST merge API. */
+export const MERGE_METHOD: MergeMethod = (() => {
+  const m = (process.env.NANO_PR_MERGE_METHOD ?? "squash").trim().toLowerCase();
+  return m === "merge" || m === "rebase" ? m : "squash";
+})();
+/** Whether to pass `--admin` to `gh pr merge` (bypass branch policy where the operator is an
+ * admin — mirrors the manual `gh pr merge --squash --admin` fallback some repos require). */
+export const MERGE_ADMIN = ["1", "true", "on", "yes"].includes(
+  (process.env.NANO_PR_MERGE_ADMIN ?? "0").trim().toLowerCase(),
+);
 
 // The prompt asset is read once at module load and carried on each new instance (SPEC §9),
 // so a PR keeps the instructions it started with for its whole run. Host-agnostic: reads via
@@ -32,9 +56,12 @@ const REVIEW_PROMPT = await (async () => {
 
 const now = () => new Date().toISOString();
 
-/** A PR is "done" in exactly these two states; everything else (converging, waiting_review,
- * escalated) is in flight. The status endpoint and the cancel guard both key off this. */
-export const TERMINAL_STATUSES: readonly string[] = ["converged", "abandoned"];
+/** A PR is "done" in exactly these states; everything else (converging, waiting_review,
+ * escalated, and the merge-stage waiting_deps/waiting_merge/queued) is in flight. `converged`
+ * is terminal only in review-only mode (AUTO_MERGE off); with auto-merge on, a converged PR
+ * transitions into the merge stage and lands as `merged`. The status endpoint and the cancel
+ * guard both key off this set. */
+export const TERMINAL_STATUSES: readonly string[] = ["converged", "merged", "abandoned"];
 
 interface PullRequest {
   pr_key: string;
@@ -51,8 +78,15 @@ interface PullRequest {
   created_at: string;
   updated_at: string;
   converged_at: string | null;
+  merged_at: string | null;
   open_escalation_id: number | null;
   open_escalation_question: string | null;
+}
+
+interface PrDependency {
+  pr_key: string;
+  depends_on_key: string;
+  created_at: string;
 }
 
 interface Escalation {
@@ -69,6 +103,7 @@ interface Escalation {
 
 const prs = (data: DataLayer) => data.table<PullRequest>("pull_requests", "pr_key");
 const escs = (data: DataLayer) => data.table<Escalation>("escalations", "id");
+const deps = (data: DataLayer) => data.table<PrDependency>("pr_dependencies", "pr_key");
 
 export interface ParsedPr {
   repo: string;
@@ -95,24 +130,80 @@ export function parsePr(input: string): ParsedPr | null {
   return null;
 }
 
-/** Register a PR row (if new) and start the convergence process. Idempotent on prKey. */
-export async function submitPr(data: DataLayer, engine: EngineClient, parsed: ParsedPr) {
+/** Extract `Depends-on: owner/repo#N[, owner/repo#N …]` (or PR URLs) from a PR body. Multiple
+ * `Depends-on:` lines accumulate; each line may list several comma/space-separated refs. Returns
+ * the normalized `owner/repo#N` keys. Unparseable tokens are ignored. */
+export function parseDependsOn(body: string): string[] {
+  const out = new Set<string>();
+  for (const line of (body ?? "").split(/\r?\n/)) {
+    const m = line.match(/^\s*depends[-\s]?on\s*:\s*(.+)$/i);
+    if (!m) continue;
+    for (const tok of m[1].split(/[,\s]+/)) {
+      const p = parsePr(tok);
+      if (p) out.add(p.prKey);
+    }
+  }
+  return [...out];
+}
+
+/** Replace a PR's dependency set (idempotent on resubmit). Self-references are dropped so a PR
+ * can never wait on itself. */
+async function registerDependencies(data: DataLayer, prKey: string, depKeys: string[]) {
+  const table = deps(data);
+  // The gateway keys this table on `pr_key`, so a single delete clears the PR's whole dep set
+  // (DELETE ... WHERE pr_key = ?) — then we re-insert the current set.
+  await table.delete(prKey);
+  const ts = now();
+  for (const depKey of new Set(depKeys)) {
+    if (depKey === prKey) continue;
+    await table.insert({ pr_key: prKey, depends_on_key: depKey, created_at: ts });
+  }
+}
+
+/** Register a PR row (if new) and start the convergence process. Idempotent on prKey. Optional
+ * `dependsOn` (explicit refs) is unioned with any `Depends-on:` line parsed from the PR body and
+ * recorded as the PR's merge-stage dependency set. */
+export async function submitPr(
+  data: DataLayer,
+  engine: EngineClient,
+  parsed: ParsedPr,
+  dependsOn: string[] = [],
+) {
   const table = prs(data);
   const existing = await table.get(parsed.prKey);
   if (existing && !TERMINAL_STATUSES.includes(existing.status)) {
     return { prKey: parsed.prKey, alreadyRunning: true };
   }
+
+  // Best-effort GitHub read: the title labels the row and the body may carry `Depends-on:` refs.
+  // A transport failure (no gh/token) must not block submission — we just skip enrichment.
+  const token = process.env.GITHUB_TOKEN ?? "";
+  let title: string | null = null;
+  const depKeys = new Set(dependsOn.map((d) => parsePr(d)?.prKey).filter((k): k is string => !!k));
+  try {
+    const meta = await fetchPrMeta(parsed.repo, parsed.number, token);
+    if (meta) {
+      title = meta.title;
+      for (const k of parseDependsOn(meta.body)) depKeys.add(k);
+    }
+  } catch (err) {
+    console.warn(`[submit] ${parsed.prKey} meta fetch: ${err}`);
+  }
+  await registerDependencies(data, parsed.prKey, [...depKeys]);
+
   const ts = now();
   if (existing) {
-    // Re-open a previously converged/abandoned PR for a fresh convergence run.
+    // Re-open a previously converged/abandoned/merged PR for a fresh convergence run.
     await table.update(parsed.prKey, {
       status: "converging",
       current_round: 1,
       url: parsed.url,
+      title: title ?? existing.title,
       waiting_since: null,
       last_review_id: null,
       outcome: null,
       converged_at: null,
+      merged_at: null,
       updated_at: ts,
     });
   } else {
@@ -121,6 +212,7 @@ export async function submitPr(data: DataLayer, engine: EngineClient, parsed: Pa
       repo: parsed.repo,
       number: parsed.number,
       url: parsed.url,
+      title,
       status: "converging",
       current_round: 1,
       created_at: ts,
@@ -143,6 +235,30 @@ export async function submitPr(data: DataLayer, engine: EngineClient, parsed: Pa
     await table.update(parsed.prKey, { process_key: String(processInstanceKey) });
   }
   return { prKey: parsed.prKey, processKey: processInstanceKey };
+}
+
+/** Start the merge-loop for a converged PR (called by the `pr.finalize` worker when AUTO_MERGE
+ * is on). Carries the same PR identity + the converged round so the merge stage can escalate
+ * with a round number. Idempotent-ish: the caller only invokes this once per convergence. */
+export async function startMerge(
+  data: DataLayer,
+  engine: EngineClient,
+  pr: { repo: string; number: number; url: string; prKey: string; round: number },
+) {
+  const { processInstanceKey } = await engine.createInstance({
+    processDefinitionId: MERGE_PROCESS_ID,
+    variables: {
+      repo: pr.repo,
+      prNumber: pr.number,
+      prUrl: pr.url,
+      prKey: pr.prKey,
+      round: pr.round,
+    },
+  });
+  if (processInstanceKey != null) {
+    await prs(data).update(pr.prKey, { process_key: String(processInstanceKey), updated_at: now() });
+  }
+  return { prKey: pr.prKey, mergeProcessKey: processInstanceKey };
 }
 
 /** Answer an open escalation → record it and resume the process. */
@@ -257,7 +373,7 @@ export async function activePrs(data: DataLayer): Promise<ActivePr[]> {
 /** One review-ready poll pass (SPEC §10): for every PR waiting on a review, fetch its GitHub
  * reviews (via the host `gh` CLI or a token — see `app/github.ts`) and, on a fresh one,
  * correlate a `review-ready` message to resume the loop. */
-export async function pollOnce(data: DataLayer, engine: EngineClient, token: string) {
+async function pollReviews(data: DataLayer, engine: EngineClient, token: string) {
   const waiting = await prs(data).find({ status: "waiting_review" });
   for (const pr of waiting) {
     const { repo, number, pr_key: prKey } = pr;
@@ -284,3 +400,131 @@ export async function pollOnce(data: DataLayer, engine: EngineClient, token: str
     }
   }
 }
+
+/** Is a dependency PR merged? Prefer our own tracked row (cheap, authoritative once we've
+ * merged it); otherwise ask GitHub whether that PR has merged (it may be an untracked PR, or
+ * one merged out-of-band). A transport failure surfaces as "not merged yet" (caller retries). */
+async function isDepMerged(data: DataLayer, depKey: string, token: string): Promise<boolean> {
+  const tracked = await prs(data).get(depKey);
+  if (tracked && tracked.status === "merged") return true;
+  const parsed = parsePr(depKey);
+  if (!parsed) return true; // unparseable dep can't be checked on GitHub → treat as cleared so it never wedges the PR
+  const st = await fetchPrState(parsed.repo, parsed.number, token);
+  return st?.merged ?? false;
+}
+
+/** Flip a PR into the transient `merging` status and publish the correlating message, reverting
+ * to `prevStatus` if the publish fails. `merging` is deliberately a status no poll branch scans
+ * (so a slow pass can't double-signal), which means a publish failure *after* the flip would
+ * otherwise wedge the PR there forever — the next pass would never pick it back up. Reverting on
+ * failure keeps the PR on a pollable status so the next pass retries. Single source of truth for
+ * the flip-then-publish handoff shared by all merge-stage waits below. */
+async function flipToMergingThenPublish(
+  data: DataLayer,
+  engine: EngineClient,
+  prKey: string,
+  prevStatus: string,
+  message: Parameters<EngineClient["publishMessage"]>[0],
+) {
+  await prs(data).update(prKey, { status: "merging", updated_at: now() });
+  try {
+    await engine.publishMessage(message);
+  } catch (err) {
+    try {
+      await prs(data).update(prKey, { status: prevStatus, updated_at: now() });
+    } catch (revertErr) {
+      console.error(`[poller] revert ${prKey} -> ${prevStatus} failed: ${revertErr}`);
+    }
+    throw err;
+  }
+}
+
+/** Merge-stage poll pass (SPEC §11). Three durable waits, each keyed off the PR's `status`, are
+ * advanced by correlating a message — mirroring the review-ready pattern so the process owns
+ * the wait and this glue only signals when a GitHub condition is met:
+ *   • waiting_deps  → every declared dependency has merged        → `deps-cleared`
+ *   • waiting_merge → GitHub settled the PR as mergeable/blocked  → `merge-ready` {mergeState}
+ *   • queued        → the queued PR has landed on GitHub          → `merge-landed`
+ * On publish we flip status to the transient `merging` (which no branch scans) so a slow pass
+ * can't double-signal, exactly as `pollReviews` flips to `converging`; `flipToMergingThenPublish`
+ * reverts the flip if the publish fails so a failed handoff can't wedge the PR. */
+async function pollMerges(data: DataLayer, engine: EngineClient, token: string) {
+  // 1) Dependencies merged?
+  for (const pr of await prs(data).find({ status: "waiting_deps" })) {
+    const prKey = pr.pr_key;
+    try {
+      const depRows = await deps(data).find({ pr_key: prKey });
+      let allMerged = true;
+      for (const d of depRows) {
+        if (!(await isDepMerged(data, d.depends_on_key, token))) {
+          allMerged = false;
+          break;
+        }
+      }
+      if (!allMerged) continue;
+      await flipToMergingThenPublish(data, engine, prKey, "waiting_deps", {
+        name: "deps-cleared",
+        correlationKey: prKey,
+        variables: {},
+      });
+      console.log(`[poller] deps cleared -> ${prKey}`);
+    } catch (err) {
+      console.error(`[poller] deps ${prKey}: ${err}`);
+    }
+  }
+
+  // 2) Mergeable / blocked?
+  for (const pr of await prs(data).find({ status: "waiting_merge" })) {
+    const { repo, number, pr_key: prKey } = pr;
+    try {
+      const st = await fetchPrState(repo, number, token);
+      if (st === null) continue; // no transport → skip this PR (others may still advance)
+      if (st.merged) {
+        // Landed out-of-band (someone merged it) — skip straight to done.
+        await flipToMergingThenPublish(data, engine, prKey, "waiting_merge", {
+          name: "merge-landed",
+          correlationKey: prKey,
+          variables: {},
+        });
+        console.log(`[poller] already merged -> ${prKey}`);
+        continue;
+      }
+      const verdict = classifyMergeability(st);
+      if (verdict === "waiting") continue; // GitHub still computing / checks pending
+      await flipToMergingThenPublish(data, engine, prKey, "waiting_merge", {
+        name: "merge-ready",
+        correlationKey: prKey,
+        variables: { mergeState: verdict },
+      });
+      console.log(`[poller] mergeable=${verdict} (${st.mergeStateStatus}) -> ${prKey}`);
+    } catch (err) {
+      console.error(`[poller] merge ${prKey}: ${err}`);
+    }
+  }
+
+  // 3) Queued PR landed?
+  for (const pr of await prs(data).find({ status: "queued" })) {
+    const { repo, number, pr_key: prKey } = pr;
+    try {
+      const st = await fetchPrState(repo, number, token);
+      if (st === null) continue; // no transport → skip this PR (others may still advance)
+      if (!st.merged) continue; // still in the queue
+      await flipToMergingThenPublish(data, engine, prKey, "queued", {
+        name: "merge-landed",
+        correlationKey: prKey,
+        variables: {},
+      });
+      console.log(`[poller] queued PR landed -> ${prKey}`);
+    } catch (err) {
+      console.error(`[poller] queued ${prKey}: ${err}`);
+    }
+  }
+}
+
+/** One full poll pass: advance both the review stage and the merge stage. Called on the
+ * self-scheduling loop in `main.ts`. */
+export async function pollOnce(data: DataLayer, engine: EngineClient, token: string) {
+  await pollReviews(data, engine, token);
+  await pollMerges(data, engine, token);
+}
+
