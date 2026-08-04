@@ -329,7 +329,53 @@ queries skip (`merging`), so a slow pass can't double-signal.
 | `NANO_PR_MERGE_METHOD` | squash | `squash` \| `merge` \| `rebase` |
 | `NANO_PR_MERGE_ADMIN` | 0 | pass `--admin` on merge |
 
-## 13. Open questions / future
+## 13. Planning fan-out (`plan-fanout.bpmn`) — issue #14
+
+A second process turns a **GitHub issue** into a fleet of PRs. It is the "series
+then parallel" flat form: plan once, then fan out over the tasks in parallel, then
+hand every produced PR to the convergence loop of §4.
+
+```
+Start(issue) → plan → record-plan → implement (parallel MI) → record-results → End
+```
+
+- **`plan`** — service task, job type `senior:plan`. Its `prompt` is
+  `prompts/plan.md` (carried as `planPrompt` and input-mapped to `prompt`). The
+  agent reads the issue via `gh` and emits `tasks: [{ id, title, prompt }]`.
+- **`record-plan`** — app worker `pr.record-plan`. Normalizes the tasks (assigns a
+  stable `id`/index), writes one `plan_tasks` row each, sets `plans.task_count` and
+  status `dispatched`, and **re-emits** the normalized `tasks` so the fan-out
+  iterates the canonical list.
+- **`implement`** — service task, job type `senior:feature`, **parallel
+  multi-instance** over `=tasks` (`inputElement="task"`,
+  `outputCollection="results"`). Each child's `prompt` is
+  `featurePrompt + "\n\n---\n\n" + task.prompt` — an input mapping evaluated **per
+  child** (Zeebe parity: the inner activity keeps its own `zeebe:ioMapping`, applied
+  on each inner-instance activation with `task`/`loopCounter` bound). Each agent
+  opens a PR and returns `{ status, summary, pr }`; `outputElement` collects those
+  into `results[i]`, index-aligned with `tasks[i]`.
+- **`record-results`** — app worker `pr.record-results`. Zips `results` back onto
+  `plan_tasks` by index, and for each opened `pr` calls the same idempotent
+  `submitPr` as §4 — **the handoff**: every fleet-produced PR enrols into the
+  review-convergence loop. Sets `plans` status `done`.
+
+**Payloads are untyped** (no `nano:shapes`/`io.nanobpm.dataEnvelope`): the vocab is
+scalar-only and cannot express the `tasks`/`results` lists, so the workers self-type
+`job.variables` inline (like `finalize`). `urban gen` still emits the four task types.
+
+**Domain model** (`db/migrations/004_planning.sql`): `plans` (one row per issue) +
+`plan_tasks` (one row per slice, tracking its `status`/`pr_key`/`summary`).
+
+**Entry points**: the page's "Hand an issue to the fleet" form
+(`startProcess plan-fanout` → `actions/plan-start.ts`), or `POST /hooks/plan`
+(`{ issue | url }`, optional `X-Hook-Secret`).
+
+**Visibility**: the home page adds a **Plans** grid (Active: planning/dispatched;
+History: done/failed/abandoned) with a `plan_tasks` child grid showing each task's
+status and the PR it produced (`pr_key` cross-references the Pull requests grid for
+convergence status).
+
+## 14. Open questions / future
 
 - **Provisioning the existing PR branch** — resolved: the `c8ctl` host-git
   integration provisions the repo and checks out the PR's head branch (it must

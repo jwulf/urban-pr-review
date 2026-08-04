@@ -43,6 +43,14 @@
     {
       "taskType": "pr.mark-merged",
       "handler": "workers/mark-merged/worker.ts"
+    },
+    {
+      "taskType": "pr.record-plan",
+      "handler": "workers/record-plan/worker.ts"
+    },
+    {
+      "taskType": "pr.record-results",
+      "handler": "workers/record-results/worker.ts"
     }
   ],
   "surfaces": {
@@ -57,6 +65,10 @@
     {
       "path": "/app/actions/start/convergence-loop",
       "module": "actions/start.ts"
+    },
+    {
+      "path": "/app/actions/start/plan-fanout",
+      "module": "actions/plan-start.ts"
     },
     {
       "path": "/app/actions/cancel",
@@ -74,6 +86,10 @@
     {
       "path": "/hooks/submit",
       "module": "actions/webhook-submit.ts"
+    },
+    {
+      "path": "/hooks/plan",
+      "module": "actions/plan-hook.ts"
     }
   ]
 }
