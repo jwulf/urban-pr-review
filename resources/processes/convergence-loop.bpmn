@@ -74,6 +74,19 @@
           <zeebe:property name="io.nanobpm.dataEnvelope.in" value="PrReviewRoundIn" />
           <zeebe:property name="io.nanobpm.dataEnvelope.out" value="PrReviewRoundOut" />
         </zeebe:properties>
+        <!--
+          Consume-once escalation guidance: `answer` is merged into the instance
+          scope when an `escalation-answered` message correlates (at `wait-answer`,
+          which has no ioMapping, so it lands at root). The input envelope projects
+          it into THIS round's agent job at activation; this output mapping then
+          clears it at completion so the one-time human guidance influences exactly
+          the round it was given for and does not leak into later rounds. Additive
+          to the envelope's status/summary/question outputs (the engine merges the
+          job result first, then applies output mappings).
+        -->
+        <zeebe:ioMapping>
+          <zeebe:output source="=null" target="answer" />
+        </zeebe:ioMapping>
       </bpmn:extensionElements>
       <bpmn:incoming>f_start</bpmn:incoming>
       <bpmn:incoming>f_reviewLoop</bpmn:incoming>
