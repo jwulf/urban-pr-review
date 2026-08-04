@@ -1,3 +1,10 @@
+# [0.6.0](https://github.com/jwulf/urban-pr-review/compare/v0.5.0...v0.6.0) (2026-08-04)
+
+
+### Features
+
+* make PR list entries clickable new-tab links ([#19](https://github.com/jwulf/urban-pr-review/issues/19)) ([cd73a02](https://github.com/jwulf/urban-pr-review/commit/cd73a0276f33ccafdd6e2f28d0d55bd40abc6b90))
+
 # [0.5.0](https://github.com/jwulf/urban-pr-review/compare/v0.4.0...v0.5.0) (2026-08-04)
 
 
