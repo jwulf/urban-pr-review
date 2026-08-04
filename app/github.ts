@@ -192,9 +192,11 @@ export async function fetchPrState(
     headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
   });
   if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
-  const j = (await r.json()) as { merged?: boolean; mergeable_state?: string };
+  const j = (await r.json()) as { merged?: boolean; merged_at?: string | null; mergeable_state?: string };
   return {
-    merged: !!j.merged,
+    // The single-PR GET returns a `merged` boolean (unlike the list endpoint); we also honour
+    // `merged_at` so this mirrors the gh branch's `state === "MERGED" || mergedAt` rule.
+    merged: !!j.merged || !!j.merged_at,
     mergeStateStatus: normalizeMergeState(j.mergeable_state ?? "unknown"),
     failingChecks: -1, // REST here doesn't enumerate checks → classifier treats BLOCKED as "wait"
   };

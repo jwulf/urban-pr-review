@@ -408,7 +408,7 @@ async function isDepMerged(data: DataLayer, depKey: string, token: string): Prom
   const tracked = await prs(data).get(depKey);
   if (tracked && tracked.status === "merged") return true;
   const parsed = parsePr(depKey);
-  if (!parsed) return true; // unparseable dep can never clear → don't wedge the PR forever
+  if (!parsed) return true; // unparseable dep can't be checked on GitHub → treat as cleared so it never wedges the PR
   const st = await fetchPrState(parsed.repo, parsed.number, token);
   return st?.merged ?? false;
 }

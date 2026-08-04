@@ -38,11 +38,29 @@ const handler: AppJobHandler<In> = async (job, app) => {
     ended_at: now,
   });
 
-  // Converged bookkeeping is recorded in both modes; `outcome`/`converged_at` capture the
-  // review result. In auto-merge mode the row's *status* moves into the merge stage rather than
-  // resting at `converged`, so the merge poller starts watching immediately.
+  // In auto-merge mode, start the separate merge-loop instance (keyed on prKey) that lands the
+  // PR *before* advancing the row into the merge stage. Best-effort: a failure here must not fail
+  // the convergence finalize. But we only flip the PR into the non-terminal `waiting_deps` status
+  // once merge-loop is actually running — otherwise the PR would be parked in a merge-stage status
+  // with no process behind it, and `submitPr` refuses to restart it (only `cancel` recovers). On
+  // failure we leave the PR terminal as `converged` so a human/operator can (re)start merge.
+  let status = "converged";
+  if (AUTO_MERGE) {
+    try {
+      await startMerge(app.data, app.engine, { repo, number: prNumber, url: prUrl, prKey, round });
+      status = "waiting_deps";
+    } catch (err) {
+      app.log("error", `finalize: could not start merge-loop for ${prKey}; leaving PR converged`, {
+        err: String(err),
+      });
+    }
+  }
+
+  // Converged bookkeeping is recorded in both modes; `outcome`/`converged_at` capture the review
+  // result. In auto-merge mode (when merge-loop started) the *status* moves into the merge stage
+  // rather than resting at `converged`, so the merge poller starts watching immediately.
   await app.data.table("pull_requests", "pr_key").update(prKey, {
-    status: AUTO_MERGE ? "waiting_deps" : "converged",
+    status,
     current_round: round,
     outcome: summary,
     converged_at: now,
@@ -50,17 +68,6 @@ const handler: AppJobHandler<In> = async (job, app) => {
     open_escalation_id: null,
     open_escalation_question: null,
   });
-
-  if (AUTO_MERGE) {
-    // Start the separate merge-loop instance (keyed on prKey) that lands the PR. Best-effort:
-    // a failure here must not fail the convergence finalize — the PR is already recorded
-    // converged, and a human/operator can (re)start merge. Log and move on.
-    try {
-      await startMerge(app.data, app.engine, { repo, number: prNumber, url: prUrl, prKey, round });
-    } catch (err) {
-      app.log("error", `finalize: could not start merge-loop for ${prKey}`, { err: String(err) });
-    }
-  }
 
   return {};
 };
