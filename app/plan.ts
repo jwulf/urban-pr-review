@@ -56,12 +56,23 @@ export interface PlanTask {
   status: string;
   pr_key: string | null;
   summary: string | null;
+  wave: number | null;
   created_at: string;
   updated_at: string;
 }
 
 export const plans = (data: DataLayer) => data.table<Plan>("plans", "plan_key");
 export const planTasks = (data: DataLayer) => data.table<PlanTask>("plan_tasks", "id");
+
+/** One dependency edge in the plan DAG (issue #20): `task_id` waits for `depends_on_task_id`.
+ * Keyed on `plan_key` so a single delete clears a plan's whole edge set (as pr_dependencies). */
+export interface PlanTaskDep {
+  plan_key: string;
+  task_id: string;
+  depends_on_task_id: string;
+}
+export const planTaskDeps = (data: DataLayer) =>
+  data.table<PlanTaskDep>("plan_task_deps", "plan_key");
 
 /** A plan is "done" in exactly these states; everything else (planning, dispatched)
  * is in flight. The cancel guard and the active view key off this. */

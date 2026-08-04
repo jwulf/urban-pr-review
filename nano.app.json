@@ -49,6 +49,14 @@
       "handler": "workers/record-plan/worker.ts"
     },
     {
+      "taskType": "pr.select-wave",
+      "handler": "workers/select-wave/worker.ts"
+    },
+    {
+      "taskType": "pr.record-wave",
+      "handler": "workers/record-wave/worker.ts"
+    },
+    {
       "taskType": "pr.record-results",
       "handler": "workers/record-results/worker.ts"
     }

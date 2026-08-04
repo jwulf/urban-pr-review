@@ -1,18 +1,29 @@
-// pr.record-plan — persists the plan the `senior:plan` agent emitted and normalizes the task
-// list so the parallel multi-instance fan-out has stable, id-bearing items.
+// pr.record-plan — persists the plan the `senior:plan` agent emitted, LEVELIZES the task
+// DAG into ordered waves (issue #20), and hands the process the first wave to run.
 //
-// The planner emits `{ tasks: [{ id?, title?, prompt }] }`. This worker:
+// The planner emits `{ tasks: [{ id?, title?, prompt, dependsOn? }] }`. This worker:
 //   • assigns each task a stable `id` (planner slug, else `t<index>`) and an index,
-//   • writes one `plan_tasks` row per task (status `pending`),
-//   • records the task count and moves the plan to `dispatched`,
-//   • re-emits the normalized `tasks` so the MI activity iterates the canonical list
-//     (input collection `=tasks`) and its output collection aligns by index.
+//   • computes each task's `wave` from its `dependsOn` DAG (app/waves.ts): independent
+//     tasks share a wave, a dependent task lands 1 + max(dep wave),
+//   • writes one `plan_tasks` row per task (status `pending`, with its `wave`) and one
+//     `plan_task_deps` row per dependency edge (idempotent: cleared + rewritten per plan),
+//   • records the task count, moves the plan to `dispatched`, and emits `currentWave = 0`
+//     plus `waveCount` so the wave loop (`select-wave → implement → record-wave`) can run.
+//
+// If the planner emits a malformed DAG (cycle / unknown or self dependency / duplicate id),
+// levelization can't order the tasks. Rather than dead-lock the plan we DEGRADE to the old
+// flat behaviour — a single wave (wave 0) of all tasks, run fully in parallel — and log a
+// warning; the ordering is lost but every task still runs. No `plan_task_deps` are recorded
+// in that case (the edges were invalid).
 import type { AppJobHandler } from "@nanobpm/urban";
+import { planTaskDeps, planTasks } from "../../app/plan.ts";
+import { computeWaves, WaveError, type WaveTask } from "../../app/waves.ts";
 
 interface RawTask {
   id?: unknown;
   title?: unknown;
   prompt?: unknown;
+  dependsOn?: unknown;
 }
 interface In extends Record<string, unknown> {
   planKey: string;
@@ -23,12 +34,16 @@ interface NormalTask {
   id: string;
   title: string;
   prompt: string;
+  dependsOn: string[];
 }
 interface Out extends Record<string, unknown> {
-  tasks: NormalTask[];
+  currentWave: number;
+  waveCount: number;
 }
 
 const str = (v: unknown): string => (typeof v === "string" ? v : v == null ? "" : String(v));
+const strList = (v: unknown): string[] =>
+  Array.isArray(v) ? v.map((x) => str(x).trim()).filter((s) => s !== "") : [];
 
 const handler: AppJobHandler<In, Out> = async (job, app) => {
   const { planKey, note } = job.variables;
@@ -37,29 +52,62 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
 
   const tasks: NormalTask[] = raw.map((t, i) => {
     const id = str(t?.id).trim() || `t${i + 1}`;
-    return { id, title: str(t?.title).trim() || id, prompt: str(t?.prompt) };
+    return {
+      id,
+      title: str(t?.title).trim() || id,
+      prompt: str(t?.prompt),
+      dependsOn: strList(t?.dependsOn),
+    };
   });
 
-  // Idempotency: a retry (or re-run) of this job must not duplicate `plan_tasks`
-  // rows for the same plan. Clear any tasks already recorded for this plan before
-  // re-inserting the normalized list.
-  const existing = await app.data.table("plan_tasks", "id").find({ plan_key: planKey });
-  for (const row of existing as Array<{ id: number }>) {
-    await app.data.table("plan_tasks", "id").delete(row.id);
+  // Levelize the DAG. A malformed graph degrades to a single all-parallel wave (see header).
+  const forLevel: WaveTask[] = tasks.map((t) => ({ id: t.id, dependsOn: t.dependsOn }));
+  let waveOf = new Map<string, number>();
+  let waveCount = tasks.length > 0 ? 1 : 0;
+  let depsValid = true;
+  try {
+    const levelled = computeWaves(forLevel);
+    waveOf = levelled.waveOf;
+    waveCount = levelled.waveCount;
+  } catch (err) {
+    if (!(err instanceof WaveError)) throw err;
+    depsValid = false;
+    for (const t of tasks) waveOf.set(t.id, 0);
+    app.log("warn", `record-plan: ${planKey} plan not levelizable, running flat`, {
+      err: err.message,
+    });
   }
+
+  // Idempotency: a retry (or re-run) of this job must not duplicate rows for the same plan.
+  const taskTable = planTasks(app.data);
+  const existing = await taskTable.find({ plan_key: planKey });
+  for (const row of existing) await taskTable.delete(row.id);
+  // `plan_task_deps` is keyed on `plan_key`, so one delete clears the plan's whole edge set.
+  const depTable = planTaskDeps(app.data);
+  await depTable.delete(planKey);
 
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];
-    await app.data.table("plan_tasks", "id").insert({
+    await taskTable.insert({
       plan_key: planKey,
       task_index: i,
       task_id: t.id,
       title: t.title,
       prompt: t.prompt,
       status: "pending",
+      wave: waveOf.get(t.id) ?? 0,
       created_at: ts,
       updated_at: ts,
     });
+    if (depsValid) {
+      for (const dep of t.dependsOn) {
+        await depTable.insert({
+          plan_key: planKey,
+          task_id: t.id,
+          depends_on_task_id: dep,
+        });
+      }
+    }
   }
 
   const patch: Record<string, unknown> = {
@@ -70,8 +118,8 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
   if (tasks.length === 0) patch.outcome = note ? str(note) : "planner emitted no tasks";
   await app.data.table("plans", "plan_key").update(planKey, patch);
 
-  // Re-emit the canonical list so `=tasks` fans out the normalized items.
-  return { tasks };
+  // Kick off the wave loop at wave 0.
+  return { currentWave: 0, waveCount };
 };
 
 export default handler;

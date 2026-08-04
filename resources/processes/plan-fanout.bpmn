@@ -1,32 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_urban_pr_review_plan" targetNamespace="http://nanobpm.io/urban-pr-review">
-  <bpmn:process id="plan-fanout" name="Agent Fleet — plan &amp; implement" isExecutable="true">
-    <!--
-      Data-driven "series then parallel" fan-out (issue #14, flat form).
-
-      A planning agent (`senior:plan`) decomposes an issue into a list of tasks; the
-      parallel multi-instance `implement` activity fans those tasks out over
-      implementation agents (`senior:feature`), one child per task. Each agent opens a
-      PR; `record-results` enrolls every opened PR into the convergence loop (the
-      handoff), so a fleet-produced PR is driven to convergence exactly as a
-      hand-submitted one.
-
-      Variables (untyped, like the finalize/merge workers — the nano:shapes/dataEnvelope
-      vocab is scalar-only and cannot express the `tasks`/`results` lists):
-        in : planKey, repo, issue, issueNumber, issueUrl, planPrompt, featurePrompt
-        plan     → emits `tasks: [{ id, title, prompt }]`
-        record-plan  → persists + re-emits normalized `tasks`
-        implement (MI over =tasks, item `task`) → `results: [{ status, summary, pr }]`
-        record-results → persists + hands each `pr` to convergence
-    -->
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_urban_pr_review_plan" targetNamespace="http://nanobpm.io/urban-pr-review">
+  <bpmn:process id="plan-fanout" name="Agent Fleet — plan &#38; implement" isExecutable="true">
     <bpmn:startEvent id="Start" name="Issue submitted">
       <bpmn:outgoing>f_toPlan</bpmn:outgoing>
     </bpmn:startEvent>
     <bpmn:serviceTask id="plan" name="Plan (agent)">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="senior:plan" />
-        <!-- The planner runs with the planning brief as its prompt; it reads the
-             issue itself (via `gh`, from issueUrl/issue) and emits `tasks`. -->
         <zeebe:ioMapping>
           <zeebe:input source="=planPrompt" target="prompt" />
         </zeebe:ioMapping>
@@ -34,36 +14,53 @@
       <bpmn:incoming>f_toPlan</bpmn:incoming>
       <bpmn:outgoing>f_toRecordPlan</bpmn:outgoing>
     </bpmn:serviceTask>
-    <bpmn:serviceTask id="record-plan" name="Record plan">
+    <bpmn:serviceTask id="record-plan" name="Record plan &#38; levelize">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="pr.record-plan" />
       </bpmn:extensionElements>
       <bpmn:incoming>f_toRecordPlan</bpmn:incoming>
+      <bpmn:outgoing>f_toSelectWave</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="select-wave" name="Select wave">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pr.select-wave" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_toSelectWave</bpmn:incoming>
+      <bpmn:incoming>f_moreWaves</bpmn:incoming>
       <bpmn:outgoing>f_toImplement</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:serviceTask id="implement" name="Implement task (agent)">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="senior:feature" />
-        <!-- Per child (Zeebe parity): the implementation brief followed by this
-             child's specific task. `task` is the bound inputElement, so this input
-             mapping is evaluated per inner instance. -->
         <zeebe:ioMapping>
-          <zeebe:input source="=featurePrompt + &quot;&#10;&#10;---&#10;&#10;&quot; + task.prompt" target="prompt" />
+          <zeebe:input source="=featurePrompt + &#34;&#10;&#10;---&#10;&#10;&#34; + task.prompt" target="prompt" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
       <bpmn:incoming>f_toImplement</bpmn:incoming>
-      <bpmn:outgoing>f_toRecordResults</bpmn:outgoing>
-      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+      <bpmn:outgoing>f_toRecordWave</bpmn:outgoing>
+      <bpmn:multiInstanceLoopCharacteristics>
         <bpmn:extensionElements>
-          <zeebe:loopCharacteristics inputCollection="=tasks" inputElement="task" outputCollection="results" outputElement="={status: status, summary: summary, pr: pr}" />
+          <zeebe:loopCharacteristics inputCollection="=waveTasks" inputElement="task" outputCollection="waveResults" outputElement="={status: status, summary: summary, pr: pr}" />
         </bpmn:extensionElements>
       </bpmn:multiInstanceLoopCharacteristics>
     </bpmn:serviceTask>
-    <bpmn:serviceTask id="record-results" name="Record results &amp; hand off">
+    <bpmn:serviceTask id="record-wave" name="Record wave &#38; hand off">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pr.record-wave" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_toRecordWave</bpmn:incoming>
+      <bpmn:outgoing>f_toMore</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="gw-more" name="more waves?" default="f_done">
+      <bpmn:incoming>f_toMore</bpmn:incoming>
+      <bpmn:outgoing>f_moreWaves</bpmn:outgoing>
+      <bpmn:outgoing>f_done</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="record-results" name="Finalize plan">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="pr.record-results" />
       </bpmn:extensionElements>
-      <bpmn:incoming>f_toRecordResults</bpmn:incoming>
+      <bpmn:incoming>f_done</bpmn:incoming>
       <bpmn:outgoing>f_toEnd</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:endEvent id="End" name="Fleet dispatched">
@@ -71,8 +68,14 @@
     </bpmn:endEvent>
     <bpmn:sequenceFlow id="f_toPlan" sourceRef="Start" targetRef="plan" />
     <bpmn:sequenceFlow id="f_toRecordPlan" sourceRef="plan" targetRef="record-plan" />
-    <bpmn:sequenceFlow id="f_toImplement" sourceRef="record-plan" targetRef="implement" />
-    <bpmn:sequenceFlow id="f_toRecordResults" sourceRef="implement" targetRef="record-results" />
+    <bpmn:sequenceFlow id="f_toSelectWave" sourceRef="record-plan" targetRef="select-wave" />
+    <bpmn:sequenceFlow id="f_toImplement" sourceRef="select-wave" targetRef="implement" />
+    <bpmn:sequenceFlow id="f_toRecordWave" sourceRef="implement" targetRef="record-wave" />
+    <bpmn:sequenceFlow id="f_toMore" sourceRef="record-wave" targetRef="gw-more" />
+    <bpmn:sequenceFlow id="f_moreWaves" name="more" sourceRef="gw-more" targetRef="select-wave">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=hasMoreWaves</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_done" name="done" sourceRef="gw-more" targetRef="record-results" />
     <bpmn:sequenceFlow id="f_toEnd" sourceRef="record-results" targetRef="End" />
   </bpmn:process>
   <bpmndi:BPMNDiagram id="BPMNDiagram_plan-fanout">
@@ -89,16 +92,28 @@
       <bpmndi:BPMNShape id="BPMNShape_record-plan" bpmnElement="record-plan">
         <dc:Bounds x="416" y="80" width="100" height="80" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="BPMNShape_implement" bpmnElement="implement">
+      <bpmndi:BPMNShape id="BPMNShape_select-wave" bpmnElement="select-wave">
         <dc:Bounds x="616" y="80" width="100" height="80" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="BPMNShape_record-results" bpmnElement="record-results">
+      <bpmndi:BPMNShape id="BPMNShape_implement" bpmnElement="implement">
         <dc:Bounds x="816" y="80" width="100" height="80" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="BPMNShape_End" bpmnElement="End">
-        <dc:Bounds x="1016" y="102" width="36" height="36" />
+      <bpmndi:BPMNShape id="BPMNShape_record-wave" bpmnElement="record-wave">
+        <dc:Bounds x="1016" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_gw-more" bpmnElement="gw-more" isMarkerVisible="true">
+        <dc:Bounds x="1216" y="95" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="997" y="143" width="74" height="28" />
+          <dc:Bounds x="1199" y="76" width="84" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_record-results" bpmnElement="record-results">
+        <dc:Bounds x="1366" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_End" bpmnElement="End">
+        <dc:Bounds x="1566" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1547" y="143" width="74" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="BPMNEdge_f_toPlan" bpmnElement="f_toPlan">
@@ -109,17 +124,41 @@
         <di:waypoint x="316" y="120" />
         <di:waypoint x="416" y="120" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="BPMNEdge_f_toImplement" bpmnElement="f_toImplement">
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toSelectWave" bpmnElement="f_toSelectWave">
         <di:waypoint x="516" y="120" />
         <di:waypoint x="616" y="120" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="BPMNEdge_f_toRecordResults" bpmnElement="f_toRecordResults">
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toImplement" bpmnElement="f_toImplement">
         <di:waypoint x="716" y="120" />
         <di:waypoint x="816" y="120" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="BPMNEdge_f_toEnd" bpmnElement="f_toEnd">
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toRecordWave" bpmnElement="f_toRecordWave">
         <di:waypoint x="916" y="120" />
         <di:waypoint x="1016" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toMore" bpmnElement="f_toMore">
+        <di:waypoint x="1116" y="120" />
+        <di:waypoint x="1216" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_done" bpmnElement="f_done">
+        <di:waypoint x="1266" y="120" />
+        <di:waypoint x="1366" y="120" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="1300" y="98" width="32" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toEnd" bpmnElement="f_toEnd">
+        <di:waypoint x="1466" y="120" />
+        <di:waypoint x="1566" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_moreWaves" bpmnElement="f_moreWaves">
+        <di:waypoint x="1241" y="145" />
+        <di:waypoint x="1241" y="180" />
+        <di:waypoint x="666" y="180" />
+        <di:waypoint x="666" y="160" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="936" y="158" width="35" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>
