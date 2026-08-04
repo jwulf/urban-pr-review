@@ -202,6 +202,37 @@ it for you:
   re-arms and retries. Set `NANO_PR_AUTO_MERGE=0` to stop at `converged`
   (review-only mode).
 
+## Fleet mode: hand it an issue (plan → implement → converge)
+
+Beyond reviewing a single PR, the app can take a whole **issue** and drive a fleet
+of agents to implement it (SPEC §12, issue #14):
+
+```
+ issue (UI / POST /hooks/plan) ─► plan-fanout (BPMN)
+    plan (senior:plan) ─► record-plan ─► implement × N (parallel, senior:feature) ─► record-results
+                                                                                        │
+                                          each opened PR ──► submitPr ──► convergence-loop (above)
+```
+
+1. A **planning agent** (`senior:plan`) reads the issue and emits a list of tasks.
+2. A **parallel multi-instance** activity fans the tasks out over
+   **implementation agents** (`senior:feature`), one PR per task.
+3. `record-results` **enrols every opened PR** into the convergence loop — so the
+   fleet's PRs are reviewed to convergence just like a hand-submitted one.
+
+Submit an issue from the **"Hand an issue to the fleet"** form on the home page, or:
+
+```bash
+curl -sS -X POST http://localhost:3000/hooks/plan \
+  -H 'content-type: application/json' \
+  -H "x-hook-secret: $NANO_PR_WEBHOOK_SECRET" \
+  -d '{ "issue": "owner/repo#123" }'
+```
+
+Watch progress in the **Plans** grid (expand a plan to see its tasks and the PRs
+they produced). The agents driving `senior:plan`/`senior:feature` are the same
+external `c8ctl nano work` workers, matched by rank×capability.
+
 ## Layout
 
 | path | purpose |
