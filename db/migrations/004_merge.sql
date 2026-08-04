@@ -4,8 +4,10 @@
 -- merge queue — escalating to a human when it is blocked. These columns/tables record that
 -- stage alongside the convergence stage already captured by 001_init.sql.
 
--- When the PR actually landed (NULL until merged). `outcome` (001) still holds the convergence
--- summary; a separate timestamp keeps "converged" and "merged" distinguishable on the row.
+-- Timestamp the app recorded the PR as landed (NULL until merged). Set by `pr.mark-merged` to the
+-- time this app *observed/recorded* the merge, which can lag GitHub's actual `merged_at` (e.g. for
+-- merge-queue or out-of-band merges). `outcome` (001) still holds the convergence summary; a
+-- separate timestamp keeps "converged" and "merged" distinguishable on the row.
 ALTER TABLE pull_requests ADD COLUMN merged_at TEXT;
 
 -- Cross-PR merge dependencies: this PR must not merge until every `depends_on_key` PR has

@@ -273,7 +273,18 @@ export async function mergePr(
     },
     body: JSON.stringify({ merge_method: opts.method }),
   });
-  if (r.ok) return { outcome: "merged", detail: "merged" };
+  if (r.ok) {
+    // A 2xx from the REST merge endpoint does not guarantee the PR has *landed*: the body's
+    // `merged` flag is authoritative, and a merge-queue-required branch is enrolled (not merged)
+    // in this pass. Trust `merged` when true; otherwise verify the PR's actual state and report
+    // `queued` when it hasn't landed yet, so the merge-loop waits for `merge-landed` rather than
+    // marking it merged prematurely.
+    const body = (await r.json().catch(() => ({}))) as { merged?: boolean };
+    if (body.merged) return { outcome: "merged", detail: "merged" };
+    const st = await fetchPrState(repo, number, token).catch(() => null);
+    if (st?.merged) return { outcome: "merged", detail: "merged" };
+    return { outcome: "queued", detail: "merge accepted; PR not yet landed (awaiting merge queue)" };
+  }
   const detail = `github ${r.status} ${r.statusText}: ${(await r.text()).slice(0, 300)}`.trim();
   return { outcome: "blocked", detail };
 }

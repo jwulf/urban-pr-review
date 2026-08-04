@@ -448,7 +448,7 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
     const { repo, number, pr_key: prKey } = pr;
     try {
       const st = await fetchPrState(repo, number, token);
-      if (st === null) return; // no transport → idle
+      if (st === null) continue; // no transport → skip this PR (others may still advance)
       if (st.merged) {
         // Landed out-of-band (someone merged it) — skip straight to done.
         await prs(data).update(prKey, { status: "merging", updated_at: now() });
@@ -475,7 +475,7 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
     const { repo, number, pr_key: prKey } = pr;
     try {
       const st = await fetchPrState(repo, number, token);
-      if (st === null) return;
+      if (st === null) continue; // no transport → skip this PR (others may still advance)
       if (!st.merged) continue; // still in the queue
       await prs(data).update(prKey, { status: "merging", updated_at: now() });
       await engine.publishMessage({ name: "merge-landed", correlationKey: prKey, variables: {} });
