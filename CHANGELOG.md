@@ -1,3 +1,10 @@
+# [0.7.0](https://github.com/jwulf/urban-pr-review/compare/v0.6.0...v0.7.0) (2026-08-04)
+
+
+### Features
+
+* mixed sequential + parallel plan fan-out via dependency waves ([#21](https://github.com/jwulf/urban-pr-review/issues/21)) ([ee67032](https://github.com/jwulf/urban-pr-review/commit/ee6703235e081a8c20f2e8b7d76ebc2282450f51)), closes [#20](https://github.com/jwulf/urban-pr-review/issues/20) [#20](https://github.com/jwulf/urban-pr-review/issues/20)
+
 # [0.6.0](https://github.com/jwulf/urban-pr-review/compare/v0.5.0...v0.6.0) (2026-08-04)
 
 
