@@ -35,7 +35,7 @@
     "compile": "deno task compile"
   },
   "dependencies": {
-    "@nanobpm/urban": "^0.17.1"
+    "@nanobpm/urban": "^0.20.0"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",

@@ -1686,11 +1686,11 @@
   },
   "workspace": {
     "dependencies": [
-      "npm:@nanobpm/urban@~0.17.1"
+      "npm:@nanobpm/urban@0.20"
     ],
     "packageJson": {
       "dependencies": [
-        "npm:@nanobpm/urban@~0.17.1",
+        "npm:@nanobpm/urban@0.20",
         "npm:@semantic-release/changelog@^6.0.3",
         "npm:@semantic-release/git@^10.0.1",
         "npm:@semantic-release/npm@^13.1.5",
