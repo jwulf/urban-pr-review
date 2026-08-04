@@ -27,6 +27,7 @@
   "scripts": {
     "start": "node --experimental-strip-types main.ts",
     "purge": "node --experimental-strip-types scripts/purge-db.ts",
+    "upgrade": "node --experimental-strip-types scripts/upgrade-from-pack.ts",
     "check": "urban check",
     "typecheck": "tsc --noEmit",
     "gen": "urban gen",
