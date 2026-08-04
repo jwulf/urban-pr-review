@@ -60,10 +60,12 @@ Because several agents may run on the same host at once:
    thread and resolve it:
 
    ```sh
-   # List threads with their first comment's databaseId (the REST comment id) + node id:
+   # List threads with all their comments' databaseIds (the REST comment ids) + node id.
+   # Fetch every comment, not just the first — the comment you handled may not be the
+   # thread's first comment, so match your REST comment id against any databaseId here:
    gh api graphql -f query='query($o:String!,$r:String!,$n:Int!){repository(owner:$o,name:$r){
      pullRequest(number:$n){reviewThreads(first:100){nodes{id isResolved
-       comments(first:1){nodes{databaseId}}}}}}' -F o=OWNER -F r=REPO -F n=PR
+       comments(first:100){nodes{databaseId}}}}}}' -F o=OWNER -F r=REPO -F n=PR
 
    # Resolve the thread whose databaseId matched the comment you handled:
    gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=THREAD_NODE_ID
