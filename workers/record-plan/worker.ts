@@ -56,7 +56,9 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
       id,
       title: str(t?.title).trim() || id,
       prompt: str(t?.prompt),
-      dependsOn: strList(t?.dependsOn),
+      // Dedupe: a planner-emitted `["a","a"]` would otherwise violate the
+      // `plan_task_deps` PK on the second edge insert and fail the job.
+      dependsOn: [...new Set(strList(t?.dependsOn))],
     };
   });
 
@@ -72,6 +74,14 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
   } catch (err) {
     if (!(err instanceof WaveError)) throw err;
     depsValid = false;
+    // The DAG is unusable (cycle / self / unknown dep, or a DUPLICATE task id). Rewrite every
+    // task to a guaranteed-unique positional id and drop deps: the wave loop's task_id-keyed
+    // maps (select-wave / record-wave) would otherwise collide on duplicate ids and silently
+    // lose updates, leaving some rows stuck `pending`. Ordering is lost; all tasks run flat.
+    tasks.forEach((t, i) => {
+      t.id = `t${i + 1}`;
+    });
+    waveOf = new Map();
     for (const t of tasks) waveOf.set(t.id, 0);
     app.log("warn", `record-plan: ${planKey} plan not levelizable, running flat`, {
       err: err.message,

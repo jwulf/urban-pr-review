@@ -75,10 +75,14 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     const prRef = str(res.pr);
     // Only trust a PR ref when the agent reports it actually opened one.
     const parsed = status === "opened" && prRef ? parsePr(prRef) : null;
+    // A keyless "opened" is effectively blocked: downstream waves gate on `opened` meaning
+    // "this dependency has an opened PR", so an "opened" with no usable PR key must NOT satisfy
+    // a dependant (it would let dependents run with a phantom, un-mergeable dependency).
+    const effectiveStatus = status === "opened" && !parsed ? "blocked" : status;
 
     const row = byTaskId.get(taskId);
     if (row) {
-      const patch: Partial<PlanTask> = { status, updated_at: ts };
+      const patch: Partial<PlanTask> = { status: effectiveStatus, updated_at: ts };
       if (summary !== undefined) patch.summary = summary;
       if (parsed?.prKey) {
         patch.pr_key = parsed.prKey;
