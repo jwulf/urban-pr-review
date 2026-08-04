@@ -1,3 +1,10 @@
+# [0.5.0](https://github.com/jwulf/urban-pr-review/compare/v0.4.0...v0.5.0) (2026-08-04)
+
+
+### Features
+
+* plan-fanout — decompose an issue into a fleet of PRs ([#14](https://github.com/jwulf/urban-pr-review/issues/14)) ([#17](https://github.com/jwulf/urban-pr-review/issues/17)) ([462a8d7](https://github.com/jwulf/urban-pr-review/commit/462a8d7fd1360db8a1f5f7ae65dd2ff86dfc8b5a))
+
 # [0.4.0](https://github.com/jwulf/urban-pr-review/compare/v0.3.1...v0.4.0) (2026-08-03)
 
 
