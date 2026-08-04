@@ -170,6 +170,15 @@ Consequences the prompt (`prompts/review-round.md`) encodes:
 | `pr-submitted` | — (start) | submit route/webhook | `{repo, prNumber, prUrl, prKey}` |
 | `review-ready` | `prKey` | **poller** | `{reviewId, reviewState, submittedAt}` |
 | `escalation-answered` | `prKey` | UI answer route | `{answer, escalationId}` |
+| `deps-cleared` | `prKey` | **poller** (merge) | — (all `Depends-on` PRs merged) |
+| `merge-ready` | `prKey` | **poller** (merge) | `{mergeState}` (`ready` \| `conflict` \| `blocked`) |
+| `merge-landed` | `prKey` | **poller** (merge) | — (queued PR merged, or merged out-of-band) |
+
+Note `escalation-answered` is reused by both processes (`convergence-loop` and
+`merge-loop`); only one is ever active for a given `prKey`, so correlation is
+unambiguous. Each `.bpmn` gives it a distinct message **id** (and distinct
+envelope shape ids) to avoid duplicate-id collisions when the manifest deploys
+both files.
 
 ## 7. Domain model (SQLite — `db/migrations/001_init.sql`) — PROPOSED
 
@@ -180,7 +189,7 @@ CREATE TABLE pull_requests (
   number           INTEGER NOT NULL,
   url              TEXT NOT NULL,
   title            TEXT,                       -- fetched from GitHub
-  status           TEXT NOT NULL,             -- converging | waiting_review | escalated | converged | abandoned
+  status           TEXT NOT NULL,             -- review: converging | waiting_review | escalated | converged; merge: waiting_deps | waiting_merge | queued | merging | merged; abandoned
   current_round    INTEGER NOT NULL DEFAULT 0,
   process_key      TEXT,                       -- engine process-instance key
   waiting_since    TEXT,                       -- ISO ts we began waiting for a review (poller cursor)
@@ -188,7 +197,8 @@ CREATE TABLE pull_requests (
   outcome          TEXT,                       -- final summary
   created_at       TEXT NOT NULL,
   updated_at       TEXT NOT NULL,
-  converged_at     TEXT
+  converged_at     TEXT,
+  merged_at        TEXT                        -- set by `pr.mark-merged` (migration 004)
 );
 
 CREATE TABLE rounds (
@@ -262,7 +272,50 @@ An in-app loop (interval `NANO_PR_POLL_MS`, default 60s):
 Requires a GitHub token (`GITHUB_TOKEN`). One cheap API call per waiting PR per
 interval.
 
-## 11. Configuration (env, `${VAR:-default}` in the manifest)
+## 11. Merge stage (`merge-loop.bpmn`)
+
+With `NANO_PR_AUTO_MERGE` on (default), the `pr.finalize` worker does not stop at
+`converged` — it starts a **second** durable process, `merge-loop`, keyed on the
+same `prKey`, sharing the datasource and poller. It merges the PR, honouring
+merge-queue branches and cross-PR dependencies, and reuses the review stage's
+escalation machinery for anything it can't resolve autonomously.
+
+Flow:
+
+```
+start ─► wait: deps merged ─► arm merge ─► wait: mergeable ─┬─ ready ─► merge ─┬─ merged ─► mark merged ─► end
+   (deps-cleared)              (waiting_merge)  (merge-ready)│                 ├─ queued ─► wait: landed ─► mark merged
+                                                             │                 │            (merge-landed)
+                                                 conflict/blocked              └─ blocked ─► escalate ─┐
+                                                             ▼                                          │
+                                                          escalate ─► wait: answered ─► (re-arm) ◄──────┘
+                                                                      (escalation-answered)
+```
+
+- **Dependencies** — `pr_dependencies(pr_key, depends_on_key)` (migration 004).
+  Declared two ways: a `Depends-on: owner/repo#N` line in the PR body (parsed on
+  submit) and/or a `dependsOn` array on the submit request. `merge-loop` parks at
+  *wait: deps merged*; the poller checks each dependency (own tracked row first,
+  else GitHub `merged` state) and publishes `deps-cleared` once all have landed.
+- **Mergeability** — the poller classifies GitHub's `mergeStateStatus`:
+  `CLEAN`/`HAS_HOOKS`/`UNSTABLE`/`BEHIND` → `ready`; `DIRTY` → `conflict`;
+  `BLOCKED` → `blocked` if a required check is failing, else keep waiting;
+  `DRAFT`/`UNKNOWN`/empty → keep waiting. It publishes `merge-ready {mergeState}`.
+- **Merge** — `pr.merge` attempts the merge (`NANO_PR_MERGE_METHOD`, default
+  `squash`). GitHub auto-enqueues on merge-queue-required branches → the process
+  waits for `merge-landed` (poller detects the landed PR). Every attempt is
+  recorded in the `merges` audit table.
+- **Escalation** — a conflict or a failing gate raises the same
+  `pr.persist-escalation` worker / UI answer form as the review stage (status
+  `escalated`); answering re-arms and retries.
+- **Terminal** — `merged` (with `merged_at`), or `converged` when
+  `NANO_PR_AUTO_MERGE=0` (review-only), or `abandoned` on cancel.
+
+Poller status choreography mirrors the review stage: before publishing a
+resuming message the poller flips the row to a **transient** status the scan
+queries skip (`merging`), so a slow pass can't double-signal.
+
+## 12. Configuration (env, `${VAR:-default}` in the manifest)
 
 | var | default | purpose |
 |---|---|---|
@@ -272,8 +325,11 @@ interval.
 | `NANO_PR_POLL_MS` | 60000 | poll interval |
 | `NANO_PR_MAX_ROUNDS` | 10 | escalate after N rounds |
 | `NANO_PR_WEBHOOK_SECRET` | — | HMAC for `/hooks/submit` |
+| `NANO_PR_AUTO_MERGE` | 1 | run the merge stage after convergence (`0` = review-only) |
+| `NANO_PR_MERGE_METHOD` | squash | `squash` \| `merge` \| `rebase` |
+| `NANO_PR_MERGE_ADMIN` | 0 | pass `--admin` on merge |
 
-## 12. Open questions / future
+## 13. Open questions / future
 
 - **Provisioning the existing PR branch** — resolved: the `c8ctl` host-git
   integration provisions the repo and checks out the PR's head branch (it must

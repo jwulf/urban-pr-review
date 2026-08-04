@@ -31,6 +31,18 @@
     {
       "taskType": "pr.finalize",
       "handler": "workers/finalize/worker.ts"
+    },
+    {
+      "taskType": "pr.arm-merge",
+      "handler": "workers/arm-merge/worker.ts"
+    },
+    {
+      "taskType": "pr.merge",
+      "handler": "workers/merge/worker.ts"
+    },
+    {
+      "taskType": "pr.mark-merged",
+      "handler": "workers/mark-merged/worker.ts"
     }
   ],
   "surfaces": {

@@ -50,6 +50,9 @@
         </nano:shape>
         <nano:shape id="PrFinalizeIn" name="Mark converged — input">
           <nano:extend name="prKey" type="string" />
+          <nano:extend name="repo" type="string" />
+          <nano:extend name="prNumber" type="integer" />
+          <nano:extend name="prUrl" type="string" />
           <nano:extend name="round" type="integer" />
           <nano:extend name="summary" type="string" optional="true" />
         </nano:shape>

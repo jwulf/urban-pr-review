@@ -40,19 +40,19 @@
           "table": "pull_requests",
           "orderBy": { "field": "updated_at", "dir": "desc" },
           "filter": [
-            { "field": "status", "in": ["converging", "waiting_review", "escalated"] }
+            { "field": "status", "in": ["converging", "waiting_review", "escalated", "waiting_deps", "waiting_merge", "queued", "merging"] }
           ]
         },
         "tabs": [
           {
             "label": "Active",
             "filter": [
-              { "field": "status", "in": ["converging", "waiting_review", "escalated"] }
+              { "field": "status", "in": ["converging", "waiting_review", "escalated", "waiting_deps", "waiting_merge", "queued", "merging"] }
             ]
           },
           {
             "label": "History",
-            "filter": [{ "field": "status", "in": ["converged", "abandoned"] }]
+            "filter": [{ "field": "status", "in": ["converged", "merged", "abandoned"] }]
           }
         ],
         "columns": [
@@ -74,6 +74,7 @@
           "fields": [
             { "field": "repo", "label": "Repository" },
             { "field": "number", "label": "PR number" },
+            { "field": "merged_at", "label": "Merged at" },
             { "field": "outcome", "label": "Outcome" }
           ],
           "children": [
@@ -104,6 +105,18 @@
                 { "field": "question", "header": "Question" },
                 { "field": "status", "header": "Status" },
                 { "field": "answer", "header": "Answer" }
+              ]
+            },
+            {
+              "title": "Depends on",
+              "source": "app",
+              "table": "pr_dependencies",
+              "parentField": "pr_key",
+              "childField": "pr_key",
+              "orderBy": { "field": "created_at", "dir": "asc" },
+              "columns": [
+                { "field": "depends_on_key", "header": "PR that must merge first" },
+                { "field": "created_at", "header": "Declared" }
               ]
             }
           ],
