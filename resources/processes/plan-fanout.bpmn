@@ -50,14 +50,14 @@
         <zeebe:ioMapping>
           <zeebe:input source="=featurePrompt + &quot;&#10;&#10;---&#10;&#10;&quot; + task.prompt" target="prompt" />
         </zeebe:ioMapping>
-        <bpmn:multiInstanceLoopCharacteristics isSequential="false">
-          <bpmn:extensionElements>
-            <zeebe:loopCharacteristics inputCollection="=tasks" inputElement="task" outputCollection="results" outputElement="={status: status, summary: summary, pr: pr}" />
-          </bpmn:extensionElements>
-        </bpmn:multiInstanceLoopCharacteristics>
       </bpmn:extensionElements>
       <bpmn:incoming>f_toImplement</bpmn:incoming>
       <bpmn:outgoing>f_toRecordResults</bpmn:outgoing>
+      <bpmn:multiInstanceLoopCharacteristics isSequential="false">
+        <bpmn:extensionElements>
+          <zeebe:loopCharacteristics inputCollection="=tasks" inputElement="task" outputCollection="results" outputElement="={status: status, summary: summary, pr: pr}" />
+        </bpmn:extensionElements>
+      </bpmn:multiInstanceLoopCharacteristics>
     </bpmn:serviceTask>
     <bpmn:serviceTask id="record-results" name="Record results &amp; hand off">
       <bpmn:extensionElements>
