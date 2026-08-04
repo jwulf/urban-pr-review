@@ -28,9 +28,16 @@ interface Out extends Record<string, unknown> {
   waveTasks: WaveTaskOut[];
 }
 
+// Coerce a wave index to a non-negative integer, falling back to 0. A NaN currentWave would make
+// the `(r.wave ?? 0) !== currentWave` filter always true, silently emitting an empty wave.
+const toWave = (v: unknown): number => {
+  const n = Math.trunc(Number(v));
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+};
+
 const handler: AppJobHandler<In, Out> = async (job, app) => {
   const planKey = job.variables.planKey;
-  const currentWave = Number(job.variables.currentWave ?? 0);
+  const currentWave = toWave(job.variables.currentWave);
   const ts = new Date().toISOString();
 
   const taskTable = planTasks(app.data);

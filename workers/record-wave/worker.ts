@@ -44,10 +44,17 @@ const str = (v: unknown): string | undefined =>
 // and we only hand off / persist a PR when the status is `opened`.
 const ALLOWED_STATUSES = new Set(["opened", "blocked", "skipped"]);
 
+// Coerce a wave index/count to a non-negative integer, falling back to 0. A NaN here would make
+// `nextWave < waveCount` mis-evaluate and end the loop early, leaving tasks `pending`.
+const toWave = (v: unknown): number => {
+  const n = Math.trunc(Number(v));
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+};
+
 const handler: AppJobHandler<In, Out> = async (job, app) => {
   const planKey = job.variables.planKey;
-  const currentWave = Number(job.variables.currentWave ?? 0);
-  const waveCount = Number(job.variables.waveCount ?? 0);
+  const currentWave = toWave(job.variables.currentWave);
+  const waveCount = toWave(job.variables.waveCount);
   const waveTasks = Array.isArray(job.variables.waveTasks) ? job.variables.waveTasks : [];
   const results = Array.isArray(job.variables.waveResults) ? job.variables.waveResults : [];
   const ts = new Date().toISOString();
