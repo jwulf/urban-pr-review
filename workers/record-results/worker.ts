@@ -24,6 +24,11 @@ interface In extends Record<string, unknown> {
 const str = (v: unknown): string | undefined =>
   typeof v === "string" && v.trim().length > 0 ? v.trim() : undefined;
 
+// The implementation agent reports one of these (see prompts/feature.md). Anything
+// else — including a missing status — is treated as `blocked`: we must not assume a
+// PR was opened, and we only hand off/persist a PR when the status is `opened`.
+const ALLOWED_STATUSES = new Set(["opened", "blocked", "skipped"]);
+
 const handler: AppJobHandler<In> = async (job, app) => {
   const { planKey } = job.variables;
   const results = Array.isArray(job.variables.results) ? job.variables.results : [];
@@ -36,10 +41,12 @@ const handler: AppJobHandler<In> = async (job, app) => {
   let opened = 0;
   for (let i = 0; i < results.length; i++) {
     const res = results[i] ?? {};
-    const status = str(res.status) ?? "opened";
+    const rawStatus = str(res.status);
+    const status = rawStatus && ALLOWED_STATUSES.has(rawStatus) ? rawStatus : "blocked";
     const summary = str(res.summary);
     const prRef = str(res.pr);
-    const parsed = prRef ? parsePr(prRef) : null;
+    // Only trust a PR ref when the agent reports it actually opened one.
+    const parsed = status === "opened" && prRef ? parsePr(prRef) : null;
 
     const row = byIndex.get(i);
     if (row) {
@@ -63,11 +70,14 @@ const handler: AppJobHandler<In> = async (job, app) => {
     }
   }
 
-  await app.data.table("plans", "plan_key").update(planKey, {
-    status: "done",
-    outcome: `${opened} PR(s) dispatched to convergence`,
-    updated_at: ts,
-  });
+  const planPatch: Record<string, unknown> = { status: "done", updated_at: ts };
+  // When there are no results, `record-plan` has already set a meaningful outcome
+  // (e.g. the planner's note that it emitted no tasks). Preserve it rather than
+  // overwriting with a "0 PR(s) dispatched" message.
+  if (results.length > 0) {
+    planPatch.outcome = `${opened} PR(s) dispatched to convergence`;
+  }
+  await app.data.table("plans", "plan_key").update(planKey, planPatch);
 
   return {};
 };

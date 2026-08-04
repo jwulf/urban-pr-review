@@ -40,6 +40,14 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     return { id, title: str(t?.title).trim() || id, prompt: str(t?.prompt) };
   });
 
+  // Idempotency: a retry (or re-run) of this job must not duplicate `plan_tasks`
+  // rows for the same plan. Clear any tasks already recorded for this plan before
+  // re-inserting the normalized list.
+  const existing = await app.data.table("plan_tasks", "id").find({ plan_key: planKey });
+  for (const row of existing as Array<{ id: number }>) {
+    await app.data.table("plan_tasks", "id").delete(row.id);
+  }
+
   for (let i = 0; i < tasks.length; i++) {
     const t = tasks[i];
     await app.data.table("plan_tasks", "id").insert({
