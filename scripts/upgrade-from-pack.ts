@@ -41,7 +41,7 @@ import {
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
-import { dirname, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 
 interface Args {
   apply: boolean;
@@ -173,10 +173,37 @@ function fetchPack(pkg: string, version: string, tmp: string): string {
 /** Extract a .tgz into `tmp` and return the `package/` dir npm tarballs wrap. */
 function extractTarball(tgz: string, tmp: string): string {
   if (!existsSync(tgz)) throw new Error(`tarball not found: ${tgz}`);
-  execFileSync("tar", ["-xzf", tgz, "-C", tmp]);
+  // Validate the archive listing BEFORE extracting: an untrusted `.tgz` may carry
+  // absolute paths or `../` segments that would let `tar` write outside `tmp`.
+  // Fail fast on any unsafe entry instead of trusting `tar` to sandbox itself.
+  const listing = runTar(["-tzf", tgz], tgz);
+  for (const raw of listing.split("\n")) {
+    const entry = raw.trim();
+    if (!entry) continue;
+    if (isAbsolute(entry) || /^[A-Za-z]:[\\/]/.test(entry)) {
+      throw new Error(`refusing to extract tarball with absolute path entry: ${entry} (${tgz})`);
+    }
+    const parts = entry.split(/[\\/]/);
+    if (parts.includes("..")) {
+      throw new Error(`refusing to extract tarball with '..' path segment: ${entry} (${tgz})`);
+    }
+  }
+  runTar(["-xzf", tgz, "-C", tmp], tgz);
   const pkgDir = join(tmp, "package");
   if (!existsSync(pkgDir)) throw new Error(`extracted tarball has no package/ dir: ${tgz}`);
   return pkgDir;
+}
+
+/** Run `tar` with a clearer error when it is missing or fails. */
+function runTar(tarArgs: string[], tgz: string): string {
+  try {
+    return execFileSync("tar", tarArgs, { encoding: "utf8" });
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") {
+      throw new Error(`'tar' not found on PATH — install it to extract ${tgz}`, { cause: e });
+    }
+    throw new Error(`tar failed on ${tgz}: ${(e as Error).message}`, { cause: e });
+  }
 }
 
 /** Resolve the source dir from --from (a dir or a .tgz) or from npm. */
@@ -220,9 +247,11 @@ function main(): void {
   if (dbPath) {
     for (const suffix of ["", "-wal", "-shm"]) {
       const rel = relative(cwd, resolve(cwd, dbPath + suffix));
-      // Only protect DB files that live inside the project (a relative path with
-      // no leading `..`); an absolute out-of-tree DB is untouched by an overlay.
-      if (!rel.startsWith("..")) preservedFiles.add(rel);
+      // Only protect DB files that live inside the project: a relative path with
+      // no leading `..` and not absolute. On Windows `path.relative()` returns an
+      // absolute path (e.g. `C:\…`) when cwd and the DB are on different drives —
+      // that is out-of-tree, so an overlay never touches it.
+      if (!rel.startsWith("..") && !isAbsolute(rel)) preservedFiles.add(rel);
     }
   }
   const preservedDirs = new Set(["nano-generated", ".nano", ".git", "node_modules"]);
@@ -232,7 +261,10 @@ function main(): void {
     const src = resolveSource(args, tmp);
     const srcVersion = packageVersion(src);
     const curVersion = packageVersion(cwd);
-    console.log(`• source ${args.pkg} @ ${srcVersion}  →  current @ ${curVersion}\n`);
+    // Describe the source accurately: with --from we overlay a local path and never
+    // consult npm, so naming args.pkg (the npm default) would be misleading.
+    const srcLabel = args.from ? `${args.from} (local)` : args.pkg;
+    console.log(`• source ${srcLabel} @ ${srcVersion}  →  current @ ${curVersion}\n`);
 
     const srcFiles = listFiles(src);
     const created: string[] = [];
