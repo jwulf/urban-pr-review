@@ -49,20 +49,10 @@ export const MERGE_ADMIN = ["1", "true", "on", "yes"].includes(
   (process.env.NANO_PR_MERGE_ADMIN ?? "0").trim().toLowerCase(),
 );
 
-// The prompt asset is read once at module load and carried on each new instance (SPEC §9),
-// so a PR keeps the instructions it started with for its whole run. Host-agnostic: reads via
-// Deno inside a compiled binary, else via node:fs under Node.
-const REVIEW_PROMPT = await (async () => {
-  const path = "prompts/review-round.md";
-  try {
-    const g = globalThis as { Deno?: { readTextFile(p: string): Promise<string> } };
-    return g.Deno?.readTextFile
-      ? await g.Deno.readTextFile(path)
-      : await (await import("node:fs/promises")).readFile(path, "utf8");
-  } catch {
-    return "";
-  }
-})();
+// The `senior:pr-review` agent prompt is no longer read by the host: it is authored in the
+// model as a `{{review-round}}` deploy-time template (see `models.templates` in nano.app.json)
+// substituted into the task's `io.nanobpm.agentTask.task.prompt` header. The host only carries
+// runtime PR identity + the round counter now.
 
 const now = () => new Date().toISOString();
 
@@ -245,7 +235,6 @@ export async function submitPr(
       prKey: parsed.prKey,
       round: 1,
       maxRounds: clampRounds(maxRounds, MAX_ROUNDS),
-      prompt: REVIEW_PROMPT,
     },
   });
   if (processInstanceKey != null) {

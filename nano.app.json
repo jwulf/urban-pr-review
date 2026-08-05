@@ -7,6 +7,9 @@
   "models": {
     "processes": [
       "resources/processes/*.bpmn"
+    ],
+    "templates": [
+      "prompts/*.md"
     ]
   },
   "data": {

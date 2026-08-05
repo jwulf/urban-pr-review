@@ -16,22 +16,12 @@ export const PLAN_PROCESS_ID = "plan-fanout";
 
 const now = () => new Date().toISOString();
 
-// Prompt assets, read once at module load and carried on each new instance (as the
-// review prompt is in app/service.ts). Host-agnostic: Deno inside a compiled binary,
-// else node:fs under Node.
-async function readAsset(path: string): Promise<string> {
-  try {
-    const g = globalThis as { Deno?: { readTextFile(p: string): Promise<string> } };
-    return g.Deno?.readTextFile
-      ? await g.Deno.readTextFile(path)
-      : await (await import("node:fs/promises")).readFile(path, "utf8");
-  } catch {
-    return "";
-  }
-}
-const PLAN_PROMPT = await readAsset("prompts/plan.md");
-const FEATURE_PROMPT = await readAsset("prompts/feature.md");
-const PLAN_REVIEW_PROMPT = await readAsset("prompts/plan-review.md");
+// Agent prompts are no longer read by the host. The `senior:plan`, `senior:plan-review`, and
+// `senior:feature` prompts are authored in the model as `{{plan}}` / `{{plan-review}}` /
+// `{{feature}}` deploy-time templates (see `models.templates` in nano.app.json) substituted into
+// each task's `io.nanobpm.agentTask.task.prompt` header. Per-instance dynamic context (a plan's
+// rejection findings, a task's brief) rides `appendPrompt`, which the harness concatenates onto
+// the header base. The host only carries runtime identity + `planFindings`.
 
 export interface Plan {
   plan_key: string;
@@ -238,10 +228,7 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
       issue: parsed.planKey,
       issueNumber: parsed.number,
       issueUrl: parsed.url,
-      planPrompt: PLAN_PROMPT,
-      planReviewPrompt: PLAN_REVIEW_PROMPT,
       planFindings: null,
-      featurePrompt: FEATURE_PROMPT,
     },
   });
   if (processInstanceKey != null) {
