@@ -1,5 +1,7 @@
 // POST /hooks/feature-answer — answer an implementation-phase task escalation out
-// of band (shared-secret auth via X-Hook-Secret), issue #25. Lets an external
+// of band (optional shared-secret guard via X-Hook-Secret, enforced only when
+// NANO_PR_WEBHOOK_SECRET is set — mirrors /hooks/submit and /hooks/plan), issue #25.
+// Lets an external
 // system (a chat relay, a CI job, a human via curl) resume a parked implementation
 // agent without the page. Same idempotent `answerTaskEscalation` path the page's
 // answer form uses.

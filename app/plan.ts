@@ -194,11 +194,25 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
     // Clear them here — the table is keyed on `plan_key`, so one delete drops the
     // whole set (mirrors how record-plan clears `plan_task_deps`).
     await planReviews(data).delete(parsed.planKey);
+    // Same class of stale-row bug for the implementation-phase escalation state
+    // (issue #25): `plan_escalations` is keyed on `id` (not `plan_key`), so drop
+    // the prior run's rows one-by-one. Otherwise a still-"open" escalation from
+    // the previous run survives the re-plan and `refreshOpenTaskEscalation`
+    // re-surfaces a question for a `task_id` we just deleted from `plan_tasks`.
+    for (const e of await planEscalations(data).find({ plan_key: parsed.planKey })) {
+      await planEscalations(data).delete(e.id);
+    }
     await table.update(parsed.planKey, {
       status: "planning",
       task_count: 0,
       issue_url: parsed.url,
       outcome: null,
+      // Reset the denormalised "surfaced escalation" pointer so nothing from the
+      // prior run lingers on the plan row (would otherwise show a dead answer form).
+      open_task_escalation_id: null,
+      open_task_question: null,
+      open_task_corr_key: null,
+      open_task_id: null,
       updated_at: ts,
     });
   } else {

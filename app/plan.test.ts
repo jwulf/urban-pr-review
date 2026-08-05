@@ -130,6 +130,73 @@ Deno.test("re-plan of a finished issue clears stale plan_reviews rows", async ()
   assertEquals(stores.plan_tasks.rows.length, 0);
 });
 
+// Red/green regression for re-plan clearing stale open escalations (issue #25).
+//
+// `plan_escalations` is written by the implementation-phase escalation loop and denormalised onto
+// the plan row (`open_task_*`). When `startPlan` re-plans a finished issue it deletes the prior
+// `plan_tasks`, so any still-"open" escalation from that run points at a task that no longer
+// exists. If those rows (and the plan's denormalised pointer) survive the re-plan,
+// `refreshOpenTaskEscalation` re-surfaces a dead question in the answer form — the same
+// stale-row class as `plan_reviews` above. This drives `startPlan` against the in-memory data
+// layer and asserts both the escalation rows and the denormalised pointer are cleared.
+Deno.test("re-plan of a finished issue clears stale open escalations and the denormalised open_task_* pointer", async () => {
+  const PLAN_KEY = "owner/repo#8";
+  const stores: Record<string, { rows: unknown[]; key: string }> = {
+    plans: {
+      rows: [{
+        plan_key: PLAN_KEY,
+        status: "done",
+        task_count: 1,
+        open_task_escalation_id: 5,
+        open_task_question: "stale question from prior run?",
+        open_task_corr_key: `${PLAN_KEY}:task-1`,
+        open_task_id: "task-1",
+      }],
+      key: "plan_key",
+    },
+    plan_tasks: { rows: [{ id: 1, plan_key: PLAN_KEY, task_id: "task-1" }], key: "id" },
+    plan_reviews: { rows: [], key: "plan_key" },
+    plan_escalations: {
+      rows: [{
+        id: 5,
+        plan_key: PLAN_KEY,
+        task_id: "task-1",
+        corr_key: `${PLAN_KEY}:task-1`,
+        question: "stale question from prior run?",
+        status: "open",
+      }],
+      key: "id",
+    },
+    plan_task_deps: { rows: [], key: "plan_key" },
+  };
+  const data = {
+    table: (name: string, key: string) =>
+      memTable(stores[name]?.rows ?? [], stores[name]?.key ?? key),
+    // deno-lint-ignore no-explicit-any
+  } as any;
+  const engine = {
+    createInstance: () => Promise.resolve({ processInstanceKey: "PI-1" }),
+    // deno-lint-ignore no-explicit-any
+  } as any;
+
+  await startPlan(data, engine, {
+    repo: "owner/repo",
+    number: 8,
+    url: "https://github.com/owner/repo/issues/8",
+    planKey: PLAN_KEY,
+  });
+
+  // Stale escalation rows from the prior run must not survive a re-plan …
+  assertEquals(stores.plan_escalations.rows.length, 0);
+  // … and the plan's denormalised "surfaced escalation" pointer must be reset,
+  // so `refreshOpenTaskEscalation` can't re-surface a question for a deleted task.
+  const plan = stores.plans.rows[0] as Record<string, unknown>;
+  assertEquals(plan.open_task_escalation_id, null);
+  assertEquals(plan.open_task_question, null);
+  assertEquals(plan.open_task_corr_key, null);
+  assertEquals(plan.open_task_id, null);
+});
+
 // Red/green coverage for the implementation-phase escalation lifecycle (issue #25).
 //
 // `refreshOpenTaskEscalation` and `answerTaskEscalation` (issue #25) drive new stateful
