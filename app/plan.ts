@@ -31,6 +31,7 @@ async function readAsset(path: string): Promise<string> {
 }
 const PLAN_PROMPT = await readAsset("prompts/plan.md");
 const FEATURE_PROMPT = await readAsset("prompts/feature.md");
+const PLAN_REVIEW_PROMPT = await readAsset("prompts/plan-review.md");
 
 export interface Plan {
   plan_key: string;
@@ -73,6 +74,21 @@ export interface PlanTaskDep {
 }
 export const planTaskDeps = (data: DataLayer) =>
   data.table<PlanTaskDep>("plan_task_deps", "plan_key");
+
+/** One adversarial plan-review round (006_plan_review.sql): the `senior:plan-review` agent's
+ * verdict on the plan before fan-out. Append-only; the current round is `count(plan_reviews)`. */
+export interface PlanReview {
+  plan_key: string;
+  round: number;
+  approved: number;
+  findings: string | null;
+  created_at: string;
+}
+export const planReviews = (data: DataLayer) => data.table<PlanReview>("plan_reviews", "plan_key");
+
+/** Max adversarial plan-review rounds before the fan-out proceeds regardless (so a reviewer that
+ * never approves can't dead-lock the plan). The last round's findings are still recorded. */
+export const MAX_PLAN_REVIEW_ROUNDS = Number(process.env.NANO_PLAN_REVIEW_ROUNDS ?? 3);
 
 /** A plan is "done" in exactly these states; everything else (planning, dispatched)
  * is in flight. The cancel guard and the active view key off this. */
@@ -146,6 +162,8 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
       issueNumber: parsed.number,
       issueUrl: parsed.url,
       planPrompt: PLAN_PROMPT,
+      planReviewPrompt: PLAN_REVIEW_PROMPT,
+      planFindings: null,
       featurePrompt: FEATURE_PROMPT,
     },
   });

@@ -32,6 +32,7 @@
     "typecheck": "tsc --noEmit",
     "gen": "urban gen",
     "gen:check": "urban gen --check",
+    "layout": "node --experimental-strip-types scripts/layout-bpmn.ts",
     "dev": "urban dev",
     "compile": "deno task compile"
   },
