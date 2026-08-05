@@ -24,8 +24,12 @@ export const MERGE_PROCESS_ID = "merge-loop";
  * in convergence-loop.bpmn). Deliberately NOT hosted here — an external harness services it; the
  * activation poll keys off it to tell "agent working" from "queued". */
 const REVIEW_JOB_TYPE = "senior:pr-review";
-/** Round cap before the loop escalates to a human. */
-export const MAX_ROUNDS = Number(process.env.NANO_PR_MAX_ROUNDS ?? 10);
+/** Default round cap before the loop escalates to a human. A per-submit override (submit form /
+ * webhook / start action) takes precedence; this env var sets the fleet-wide default. The cap
+ * coercion + ceiling live in the pure `./rounds.ts` module (re-exported for callers). */
+export { clampRounds, MAX_ROUNDS_CEILING } from "./rounds.ts";
+import { clampRounds } from "./rounds.ts";
+export const MAX_ROUNDS = clampRounds(process.env.NANO_PR_MAX_ROUNDS, 20);
 
 /** Whether a converged PR is automatically driven to merge (the merge-loop). Default on; set
  * `NANO_PR_AUTO_MERGE=0` to stop at `converged` (review-only mode). */
@@ -178,6 +182,7 @@ export async function submitPr(
   engine: EngineClient,
   parsed: ParsedPr,
   dependsOn: string[] = [],
+  maxRounds: number = MAX_ROUNDS,
 ) {
   const table = prs(data);
   const existing = await table.get(parsed.prKey);
@@ -237,7 +242,7 @@ export async function submitPr(
       prUrl: parsed.url,
       prKey: parsed.prKey,
       round: 1,
-      maxRounds: MAX_ROUNDS,
+      maxRounds: clampRounds(maxRounds, MAX_ROUNDS),
       prompt: REVIEW_PROMPT,
     },
   });

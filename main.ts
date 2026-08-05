@@ -17,7 +17,7 @@
 // EXTERNAL worker. Point a coding-agent harness at that job type (the same one that services
 // the code-first twin) so the automated review stays decoupled from the orchestration.
 import { createNanoSdkEngineClient, runFromEnv, selectHost } from "@nanobpm/urban";
-import { pollOnce } from "./app/service.ts";
+import { MAX_ROUNDS, pollOnce } from "./app/service.ts";
 
 const PORT = Number(process.env.PR_REVIEW_PORT ?? 3000);
 const POLL_MS = Number(process.env.NANO_PR_POLL_MS ?? 60_000);
@@ -68,4 +68,4 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => void drainAndExit());
 }
 
-console.log(`urban-pr-review serving on :${PORT} (poll ${POLL_MS}ms, maxRounds ${process.env.NANO_PR_MAX_ROUNDS ?? 10})`);
+console.log(`urban-pr-review serving on :${PORT} (poll ${POLL_MS}ms, maxRounds ${MAX_ROUNDS})`);

@@ -23,7 +23,8 @@
         "submitLabel": "Start review",
         "action": { "kind": "startProcess", "process": "convergence-loop" },
         "fields": [
-          { "key": "pr", "label": "owner/repo#123 or a GitHub PR URL", "type": "text" }
+          { "key": "pr", "label": "owner/repo#123 or a GitHub PR URL", "type": "text" },
+          { "key": "maxRounds", "label": "Max review rounds (blank = 20)", "type": "number" }
         ]
       }
     },

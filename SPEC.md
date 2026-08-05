@@ -323,7 +323,7 @@ queries skip (`merging`), so a slow pass can't double-signal.
 | `NANO_APP_DB_URL` | `file:./app.db` | sqlite |
 | `GITHUB_TOKEN` | — | GitHub API (poller + agent) |
 | `NANO_PR_POLL_MS` | 60000 | poll interval |
-| `NANO_PR_MAX_ROUNDS` | 10 | escalate after N rounds |
+| `NANO_PR_MAX_ROUNDS` | 20 | default round cap (per-submit `maxRounds` override, clamped 1–100) |
 | `NANO_PR_WEBHOOK_SECRET` | — | HMAC for `/hooks/submit` |
 | `NANO_PR_AUTO_MERGE` | 1 | run the merge stage after convergence (`0` = review-only) |
 | `NANO_PR_MERGE_METHOD` | squash | `squash` \| `merge` \| `rebase` |
