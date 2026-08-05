@@ -295,6 +295,8 @@ with `openDomain("app")`.
 | `NANO_PR_MERGE_METHOD` | `squash` | merge method: `squash`, `merge`, or `rebase` |
 | `NANO_PR_MERGE_ADMIN` | `0` | pass `--admin` to override failing non-required checks (use with care) |
 | `NANO_PR_MAX_CI_FIX_ROUNDS` | `3` | max `senior:fix-ci` attempts to green a `blocked` PR's failing checks before escalating; `0` disables (escalate immediately), clamped to 0–20 |
+| `NANO_PR_REVIEW_WAIT_TIMEOUT` | `PT20M` | ISO-8601 duration the loop waits for a fresh review before escalating a stalled review to a human (the timer arm of the `wait-review` event-based gateway); a malformed value falls back to the default |
+| `NANO_PR_REVIEW_NUDGE_MINUTES` | `5` | cooldown between the poller's automatic Copilot re-request nudges for one waiting PR (clamped to 1–1440); keep below the wait timeout so several nudges are tried before escalating |
 
 ## Run
 

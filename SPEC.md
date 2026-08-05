@@ -97,15 +97,18 @@ known at submit time, carried as a process variable and stored on the DB row.
 │    <gateway: status>
 │      ├── converged  → [Mark converged] → (end: converged)
 │      │
-│      ├── addressed  → [Wait: review-ready]  (msg catch, key = prKey)
-│      │                     → round++ ──────────────────────────────┐
-│      │                                                             │
-│      └── needs_input     [Record escalation]                       │
-│          or blocked  →   (kind = question | blocker)               │
-│                          → [Wait: escalation-answered] (msg catch) │
-│                          → set answer ──────────────────────────────┤
-│                                                                    │
-└────────────────────────────────────────────────────────────────────┘
+│      ├── addressed  → [Record round] → <event-based gateway: review ready or timeout?>
+│      │                     ├── review-ready (msg catch, key = prKey) → round++ ─────┐
+│      │                     └── =reviewWaitTimeout (timer catch)                     │
+│      │                          → [Escalate: review stalled] (blocked)              │
+│      │                          → [Wait: escalation-answered] ──────────────────────┤
+│      │                                                                             │
+│      └── needs_input     [Record escalation]                       │               │
+│          or blocked  →   (kind = question | blocker)               │               │
+│                          → [Wait: escalation-answered] (msg catch) │               │
+│                          → set answer ──────────────────────────────┤               │
+│                                                                    │               │
+└────────────────────────────────────────────────────────────────────┴───────────────┘
 
 Both `needs_input` (the agent has a question) and `blocked` (the agent is stuck
 on something external — auth, a failing push, a missing secret) route to the
@@ -119,10 +122,25 @@ Guard: before each Review round, if round > MAX_ROUNDS → force an escalation
 ```
 
 Notes:
-- On `addressed`, the agent has **already** re-requested review as part of its
-  round, so the process just sleeps at `review-ready`.
+- On `addressed`, the loop parks at an **event-based gateway** that races a
+  `review-ready` message (correlated by the poller when a fresh review lands)
+  against a `=reviewWaitTimeout` timer (seeded at submit from
+  `NANO_PR_REVIEW_WAIT_TIMEOUT`, default `PT20M`). Whichever fires first
+  withdraws the other — the message arm advances `round`, the timer arm escalates
+  a **stalled review** (`blocked`) so a human decides rather than the instance
+  hanging forever. Because `persist-round` already recorded this `round` as
+  `addressed` before the gateway, the timer arm opens the escalation **without
+  re-recording the round** (it passes `recordRound=false`), so a single round is
+  never logged as both `addressed` and `blocked`. This replaced a bare
+  `review-ready` catch that could hang
+  indefinitely: Copilot won't re-review a round with no new commit and routinely
+  dismisses a re-request, so with no timeout a review that never arrives wedged
+  the loop (observed: three convergence processes stalled ~22h). The poller's
+  auto re-request (§10) is the primary liveness mechanism; this timer is the
+  backstop when even repeated nudges fail.
 - On `needs_input`, the same `round` is retried after the answer (the answer is
   added to the agent's context; the round number does not advance).
+
 
 ## 5. Agent job contract (`senior:pr-review`)
 
@@ -279,14 +297,23 @@ deploy-time template substitution.
 ## 10. Poller
 
 An in-app loop (interval `NANO_PR_POLL_MS`, default 60s):
-1. `SELECT pr_key, repo, number, waiting_since, last_review_id FROM pull_requests WHERE status = 'waiting_review'`.
+1. `SELECT pr_key, repo, number, waiting_since, last_review_id, last_nudge_at FROM pull_requests WHERE status = 'waiting_review'`.
 2. For each, GET the PR's reviews from GitHub; find the newest review submitted
    after `waiting_since` with id > `last_review_id`.
 3. If found → publish `review-ready` (key = `pr_key`, `{reviewId, ...}`) and set
    `last_review_id`.
+4. If **not** found → ensure a review is in flight: unless Copilot is already a
+   pending reviewer, **re-request** it (REST `requested_reviewers`, exact login
+   `copilot-pull-request-reviewer[bot]`) and record `last_nudge_at`. This is
+   throttled to one attempt per `NANO_PR_REVIEW_NUDGE_MINUTES` window (default 5m)
+   so a re-request Copilot dismisses is retried without hammering the API. A repo
+   where Copilot isn't an assignable reviewer (HTTP 422) is left to the process's
+   review-wait timer (§4). This closes the stall where Copilot won't spontaneously
+   re-review and silently dismisses a re-request, so no `review-ready` ever fires.
 
-Requires a GitHub token (`GITHUB_TOKEN`). One cheap API call per waiting PR per
-interval.
+Requires a GitHub token (`GITHUB_TOKEN`) or the host `gh` CLI. One cheap API call
+per waiting PR per interval (plus at most one reviewer-state check + re-request per
+nudge window).
 
 ## 11. Merge stage (`merge-loop.bpmn`)
 
@@ -359,6 +386,8 @@ queries skip (`merging`), so a slow pass can't double-signal.
 | `NANO_PR_AUTO_MERGE` | 1 | run the merge stage after convergence (`0` = review-only) |
 | `NANO_PR_MERGE_METHOD` | squash | `squash` \| `merge` \| `rebase` |
 | `NANO_PR_MERGE_ADMIN` | 0 | pass `--admin` on merge |
+| `NANO_PR_REVIEW_WAIT_TIMEOUT` | PT20M | ISO-8601 wait before a stalled review escalates (timer arm of the `wait-review` event-based gateway); malformed → default |
+| `NANO_PR_REVIEW_NUDGE_MINUTES` | 5 | cooldown between poller Copilot re-request nudges per PR (clamped 1–1440) |
 
 ## 13. Planning fan-out (`plan-fanout.bpmn`) — issue #14
 
