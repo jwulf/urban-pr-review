@@ -20,6 +20,10 @@ import {
 export const PROCESS_ID = "convergence-loop";
 /** The BPMN process that lands a converged PR (`resources/processes/merge-loop.bpmn`). */
 export const MERGE_PROCESS_ID = "merge-loop";
+/** Job type of the external review agent (the `review-round` service task's `zeebe:taskDefinition`
+ * in convergence-loop.bpmn). Deliberately NOT hosted here — an external harness services it; the
+ * activation poll keys off it to tell "agent working" from "queued". */
+const REVIEW_JOB_TYPE = "senior:pr-review";
 /** Round cap before the loop escalates to a human. */
 export const MAX_ROUNDS = Number(process.env.NANO_PR_MAX_ROUNDS ?? 10);
 
@@ -81,6 +85,12 @@ interface PullRequest {
   merged_at: string | null;
   open_escalation_id: number | null;
   open_escalation_question: string | null;
+  // Job-activation visibility (005_job_activation.sql), written by the poller's
+  // `pollJobActivation` pass. `active_worker` is the leasing worker's name while an
+  // agent is actively working the `senior:pr-review` round; NULL means the job is
+  // queued (created, not yet activated) or the process isn't at review-round.
+  active_worker: string | null;
+  lease_until: string | null;
 }
 
 interface PrDependency {
@@ -345,6 +355,11 @@ export interface ActivePr {
   waitingSince: string | null;
   openEscalation: string | null;
   updatedAt: string;
+  /** Leasing worker while an agent is actively working the review round; null when queued
+   * (job created, not yet activated) or not at the review-round task. */
+  activeWorker: string | null;
+  /** ISO ts the current activation lease expires; null when not activated. */
+  leaseUntil: string | null;
 }
 
 /** Every tracked PR not in a terminal state (converged/abandoned), newest-updated first. Backs
@@ -367,6 +382,8 @@ export async function activePrs(data: DataLayer): Promise<ActivePr[]> {
       waitingSince: p.waiting_since ?? null,
       openEscalation: p.open_escalation_question ?? null,
       updatedAt: p.updated_at,
+      activeWorker: p.active_worker ?? null,
+      leaseUntil: p.lease_until ?? null,
     }));
 }
 
@@ -521,10 +538,102 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
   }
 }
 
-/** One full poll pass: advance both the review stage and the merge stage. Called on the
- * self-scheduling loop in `main.ts`. */
-export async function pollOnce(data: DataLayer, engine: EngineClient, token: string) {
+/** The subset of a Camunda-8 `/v2/jobs/search` result item this app reads. `worker` is the
+ * leasing worker's name (empty/absent until an agent activates the job); `deadline` is the
+ * activation lock's expiry (ISO ts). */
+interface JobSearchItem {
+  worker?: string;
+  deadline?: string | null;
+  state?: string;
+}
+
+/** One job-activation poll pass. The `converging` status means the process is parked at the
+ * `review-round` service task with a `senior:pr-review` job outstanding — but it does not say
+ * whether an external agent has *activated* (leased) that job yet. This pass reads that off the
+ * engine's Camunda-8 `/v2/jobs/search`: an activated job carries a leasing `worker` + a lock
+ * `deadline`; a merely-created (queued) one carries neither. (The wire `state` can't tell them
+ * apart — Camunda's JobStateEnum has no ACTIVATED value, so the engine projects Activated ->
+ * CREATED; the `worker`/`deadline` fields are the compatible activation signal.)
+ *
+ * It writes `active_worker` + `lease_until` onto the PR row so the pages surface can show
+ * "agent working" vs "queued (awaiting an agent)", updating (and bumping `updated_at`) only on
+ * an actual change so a steady state doesn't churn the grid. Best-effort: any transport failure
+ * leaves the last-known values untouched and the next pass retries. */
+async function pollJobActivation(
+  data: DataLayer,
+  restAddress: string,
+  engineToken: string | undefined,
+) {
+  const base = restAddress.replace(/\/+$/, "");
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (engineToken) headers.authorization = `Bearer ${engineToken}`;
+
+  const all = await prs(data).all();
+  for (const pr of all) {
+    // Only a `converging` PR has a live review-round job. Any other status with a stale worker
+    // set (e.g. it just moved to `waiting_review`) gets cleared so the grid can't show a
+    // phantom "agent working".
+    if (pr.status !== "converging") {
+      if (pr.active_worker || pr.lease_until) {
+        await prs(data).update(pr.pr_key, {
+          active_worker: null,
+          lease_until: null,
+          updated_at: now(),
+        });
+      }
+      continue;
+    }
+    if (!pr.process_key) continue;
+
+    let worker: string | null = null;
+    let leaseUntil: string | null = null;
+    try {
+      const res = await fetch(`${base}/jobs/search`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          filter: { type: REVIEW_JOB_TYPE, processInstanceKey: pr.process_key, state: "CREATED" },
+          page: { limit: 20 },
+        }),
+      });
+      if (!res.ok) continue; // engine unhappy → keep last-known, retry next pass
+      const body = (await res.json()) as { items?: JobSearchItem[] };
+      // An open job with a leasing worker means an agent has activated it. Prefer the one with
+      // the latest deadline if several are open (there is normally at most one).
+      const activated = (body.items ?? [])
+        .filter((j) => typeof j.worker === "string" && j.worker.length > 0)
+        .sort((a, b) => (a.deadline ?? "").localeCompare(b.deadline ?? ""))
+        .pop();
+      if (activated) {
+        worker = activated.worker ?? null;
+        leaseUntil = activated.deadline ?? null;
+      }
+    } catch (err) {
+      console.error(`[poller] job-activation ${pr.pr_key}: ${err}`);
+      continue;
+    }
+
+    if (worker !== (pr.active_worker ?? null) || leaseUntil !== (pr.lease_until ?? null)) {
+      await prs(data).update(pr.pr_key, {
+        active_worker: worker,
+        lease_until: leaseUntil,
+        updated_at: now(),
+      });
+    }
+  }
+}
+
+/** One full poll pass: advance the review stage, the merge stage, and (when the engine REST
+ * endpoint is supplied) the job-activation visibility pass. Called on the self-scheduling loop
+ * in `main.ts`. */
+export async function pollOnce(
+  data: DataLayer,
+  engine: EngineClient,
+  token: string,
+  engineRest?: { restAddress: string; token?: string },
+) {
   await pollReviews(data, engine, token);
   await pollMerges(data, engine, token);
+  if (engineRest) await pollJobActivation(data, engineRest.restAddress, engineRest.token);
 }
 
