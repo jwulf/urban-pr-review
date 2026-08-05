@@ -213,8 +213,36 @@
                 { "field": "pr_key", "header": "PR" },
                 { "field": "summary", "header": "Summary" }
               ]
+            },
+            {
+              "title": "Escalations",
+              "source": "app",
+              "table": "plan_escalations",
+              "parentField": "plan_key",
+              "childField": "plan_key",
+              "orderBy": { "field": "id", "dir": "asc" },
+              "columns": [
+                { "field": "task_id", "header": "Task" },
+                { "field": "question", "header": "Question" },
+                { "field": "status", "header": "Status" },
+                { "field": "draft_pr_key", "header": "Draft PR" },
+                { "field": "answer", "header": "Answer" }
+              ]
             }
-          ]
+          ],
+          "form": {
+            "showWhenField": "open_task_escalation_id",
+            "title": "Answer the open task escalation",
+            "promptField": "open_task_question",
+            "inputKey": "answer",
+            "inputLabel": "Your answer",
+            "submitLabel": "Send answer",
+            "action": {
+              "kind": "publishMessage",
+              "message": "feature-escalation-answered",
+              "correlationKeyField": "open_task_corr_key"
+            }
+          }
         }
       }
     }

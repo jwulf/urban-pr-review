@@ -43,6 +43,14 @@ export interface Plan {
   task_count: number;
   process_key: string | null;
   outcome: string | null;
+  // Denormalised "oldest open task escalation" pointer (issue #25): the plans page
+  // detail has a single answer form per row, so the oldest still-open per-task
+  // escalation is surfaced here; answering re-points these at the next one (or
+  // clears them). See refreshOpenTaskEscalation.
+  open_task_escalation_id: number | null;
+  open_task_question: string | null;
+  open_task_corr_key: string | null;
+  open_task_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -58,12 +66,43 @@ export interface PlanTask {
   pr_key: string | null;
   summary: string | null;
   wave: number | null;
+  // Implementation-phase escalation (issue #25): the agent's open question, the
+  // human's answer, the work-preserving draft PR, and the message correlation key
+  // (`<plan_key>:<task_id>`) the process parks on. NULL unless the task escalated.
+  open_question: string | null;
+  answer: string | null;
+  draft_pr_key: string | null;
+  corr_key: string | null;
   created_at: string;
   updated_at: string;
 }
 
+/** One implementation-phase escalation (issue #25) — the per-task analogue of the
+ * review loop's `escalations` row. `status` is open | answered. */
+export interface PlanEscalation {
+  id: number;
+  plan_key: string;
+  task_id: string;
+  corr_key: string;
+  question: string;
+  answer: string | null;
+  draft_pr_key: string | null;
+  status: string;
+  asked_at: string;
+  answered_at: string | null;
+}
+
 export const plans = (data: DataLayer) => data.table<Plan>("plans", "plan_key");
 export const planTasks = (data: DataLayer) => data.table<PlanTask>("plan_tasks", "id");
+export const planEscalations = (data: DataLayer) =>
+  data.table<PlanEscalation>("plan_escalations", "id");
+
+/** The message the plan-fanout process catches to resume an escalated task; its
+ * subscription correlates on `<plan_key>:<task_id>` (see plan-fanout.bpmn). */
+export const FEATURE_ESCALATION_MESSAGE = "feature-escalation-answered";
+
+/** Build the per-task message correlation key the process parks on. */
+export const featureCorrKey = (planKey: string, taskId: string) => `${planKey}:${taskId}`;
 
 /** One dependency edge in the plan DAG (issue #20): `task_id` waits for `depends_on_task_id`.
  * Keyed on `plan_key` so a single delete clears a plan's whole edge set (as pr_dependencies). */
@@ -192,4 +231,52 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
     await table.update(parsed.planKey, { process_key: String(processInstanceKey), updated_at: now() });
   }
   return { planKey: parsed.planKey, processKey: processInstanceKey };
+}
+
+/** Re-point a plan's denormalised "open task escalation" fields at its OLDEST
+ * still-open `plan_escalations` row (or clear them when none remain). The page
+ * runtime binds a single answer form per plan row, so parallel escalations are
+ * surfaced one at a time, oldest-first; this is called after opening an
+ * escalation and after answering one. */
+export async function refreshOpenTaskEscalation(data: DataLayer, planKey: string) {
+  const open = (await planEscalations(data).find({ plan_key: planKey, status: "open" }))
+    .sort((a, b) => a.id - b.id)[0];
+  await plans(data).update(planKey, {
+    open_task_escalation_id: open ? open.id : null,
+    open_task_question: open ? open.question : null,
+    open_task_corr_key: open ? open.corr_key : null,
+    open_task_id: open ? open.task_id : null,
+    updated_at: now(),
+  });
+}
+
+/** Answer an open implementation-phase escalation → record it, resume the parked
+ * task via the correlated `feature-escalation-answered` message, and re-surface
+ * the next-oldest open escalation (if any). Keyed by the correlation key
+ * (`<plan_key>:<task_id>`) so an external webhook and the page share one path.
+ * Idempotent-ish: a corr_key with no open escalation is a 404-style no-op. */
+export async function answerTaskEscalation(
+  data: DataLayer,
+  engine: EngineClient,
+  corrKey: string,
+  answer: string,
+) {
+  const open = (await planEscalations(data).find({ corr_key: corrKey, status: "open" }))
+    .sort((a, b) => b.id - a.id)[0];
+  if (!open) return { ok: false, reason: "no open escalation" };
+  const ts = now();
+  await planEscalations(data).update(open.id, { answer, status: "answered", answered_at: ts });
+  // Mirror onto the task row so a re-dispatched agent (and the UI) sees the answer.
+  for (const t of await planTasks(data).find({ plan_key: open.plan_key, task_id: open.task_id })) {
+    await planTasks(data).update(t.id, { answer, updated_at: ts });
+  }
+  // Resume the parked child: the process merges `answer` into the child scope and
+  // loops back to re-dispatch the SAME task on its existing branch.
+  await engine.publishMessage({
+    name: FEATURE_ESCALATION_MESSAGE,
+    correlationKey: corrKey,
+    variables: { answer },
+  });
+  await refreshOpenTaskEscalation(data, open.plan_key);
+  return { ok: true, escalationId: open.id, planKey: open.plan_key, taskId: open.task_id };
 }
