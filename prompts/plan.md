@@ -34,6 +34,10 @@ Detect existing children two ways (try both; union the results, de-duplicated):
      --jq '.[] | {number, title, state}'
    ```
 
+   Substitute `<owner>/<repo>` with `variables.repo` and `<number>` with the
+   epic's own issue number (the `#123` in `variables.issue`) so you query the
+   epic in the correct repository.
+
    (`--paginate` matters: epics with more than one page of children — 30+
    sub-issues — are otherwise only partially adopted, silently dropping tasks.)
 
@@ -49,8 +53,10 @@ Detect existing children two ways (try both; union the results, de-duplicated):
 For every distinct child issue number `N` you find:
 
 - Read it with `gh issue view <owner>/<repo>#N` to get its title, body, and
-  current **state** (task-list `#N` references carry no state until you fetch
-  them; the native `sub_issues` query above already returns `state`).
+  current **state** (substitute `<owner>/<repo>` with `variables.repo` so `#N` is
+  resolved in this same repository, not a different one; task-list `#N` references
+  carry no state until you fetch them; the native `sub_issues` query above already
+  returns `state`).
 - Skip it if it is already **closed** (that slice is done).
 - Otherwise, emit **one task** for it (see the output contract), with:
   - `id` = `issue-N`,
