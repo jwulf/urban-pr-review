@@ -13,7 +13,8 @@ The job payload (stdin JSON) carries:
   context (`gh issue view`).
 - `variables.repo` — `owner/repo`.
 - `variables.answer` — **present only when you are resuming after an escalation**
-  (see below): the human's answer to the question you asked. Absent on a first run.
+  (see below): the human's answer to the question you asked. It is null/empty on a
+  first run and a non-blank string only on a resume.
 
 You have `gh` / git authenticated for the target repository.
 
