@@ -1,3 +1,10 @@
+# [0.9.0](https://github.com/jwulf/urban-pr-review/compare/v0.8.0...v0.9.0) (2026-08-05)
+
+
+### Features
+
+* configurable review-round cap (default 20) + submit-form field ([#27](https://github.com/jwulf/urban-pr-review/issues/27)) ([ee8e314](https://github.com/jwulf/urban-pr-review/commit/ee8e3140b15b02cf0a8a1f268187f539debfe211))
+
 # [0.8.0](https://github.com/jwulf/urban-pr-review/compare/v0.7.0...v0.8.0) (2026-08-05)
 
 
