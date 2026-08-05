@@ -129,3 +129,122 @@ Deno.test("re-plan of a finished issue clears stale plan_reviews rows", async ()
   assertEquals(stores.plan_reviews.rows.length, 0);
   assertEquals(stores.plan_tasks.rows.length, 0);
 });
+
+// Red/green coverage for the implementation-phase escalation lifecycle (PR #28 review).
+//
+// `refreshOpenTaskEscalation` and `answerTaskEscalation` (issue #25) drive new stateful
+// behaviour — denormalising the plan's "surfaced" escalation, mirroring the answer onto the
+// task row, and publishing the correlated resume message — that had no unit coverage. These
+// drive both against the in-memory data layer above and assert the oldest-first surfacing,
+// the answer mirroring, and the published message.
+import { answerTaskEscalation, refreshOpenTaskEscalation } from "./plan.ts";
+
+function escalationStores(rows: unknown[]): Record<string, { rows: unknown[]; key: string }> {
+  return {
+    plans: { rows: [{ plan_key: "owner/repo#9" }], key: "plan_key" },
+    plan_escalations: { rows, key: "id" },
+    plan_tasks: { rows: [], key: "id" },
+  };
+}
+
+// deno-lint-ignore no-explicit-any
+function memData(stores: Record<string, { rows: any[]; key: string }>) {
+  return {
+    table: (name: string, key: string) =>
+      memTable(stores[name]?.rows ?? [], stores[name]?.key ?? key),
+    // deno-lint-ignore no-explicit-any
+  } as any;
+}
+
+Deno.test("refreshOpenTaskEscalation surfaces the OLDEST open escalation, then clears when none remain", async () => {
+  const stores = escalationStores([
+    { id: 2, plan_key: "owner/repo#9", task_id: "b", corr_key: "owner/repo#9:b", question: "Q-b", status: "open" },
+    { id: 1, plan_key: "owner/repo#9", task_id: "a", corr_key: "owner/repo#9:a", question: "Q-a", status: "open" },
+  ]);
+  const data = memData(stores);
+
+  await refreshOpenTaskEscalation(data, "owner/repo#9");
+  // deno-lint-ignore no-explicit-any
+  let plan = stores.plans.rows[0] as any;
+  assertEquals(plan.open_task_escalation_id, 1);
+  assertEquals(plan.open_task_question, "Q-a");
+  assertEquals(plan.open_task_corr_key, "owner/repo#9:a");
+  assertEquals(plan.open_task_id, "a");
+
+  // Once the oldest is answered, the next-oldest is surfaced.
+  // deno-lint-ignore no-explicit-any
+  (stores.plan_escalations.rows.find((r: any) => r.id === 1) as any).status = "answered";
+  await refreshOpenTaskEscalation(data, "owner/repo#9");
+  // deno-lint-ignore no-explicit-any
+  plan = stores.plans.rows[0] as any;
+  assertEquals(plan.open_task_escalation_id, 2);
+  assertEquals(plan.open_task_id, "b");
+
+  // With nothing open the denormalised fields clear.
+  // deno-lint-ignore no-explicit-any
+  (stores.plan_escalations.rows.find((r: any) => r.id === 2) as any).status = "answered";
+  await refreshOpenTaskEscalation(data, "owner/repo#9");
+  // deno-lint-ignore no-explicit-any
+  plan = stores.plans.rows[0] as any;
+  assertEquals(plan.open_task_escalation_id, null);
+  assertEquals(plan.open_task_question, null);
+  assertEquals(plan.open_task_corr_key, null);
+  assertEquals(plan.open_task_id, null);
+});
+
+Deno.test("answerTaskEscalation records the answer, mirrors it onto the task, publishes the resume message, and re-surfaces the next escalation", async () => {
+  const stores = escalationStores([
+    { id: 1, plan_key: "owner/repo#9", task_id: "a", corr_key: "owner/repo#9:a", question: "Q-a", status: "open", answer: null },
+    { id: 2, plan_key: "owner/repo#9", task_id: "b", corr_key: "owner/repo#9:b", question: "Q-b", status: "open", answer: null },
+  ]);
+  stores.plan_tasks.rows.push({ id: 10, plan_key: "owner/repo#9", task_id: "a", answer: null });
+  const data = memData(stores);
+
+  // deno-lint-ignore no-explicit-any
+  const published: any[] = [];
+  const engine = {
+    // deno-lint-ignore no-explicit-any
+    publishMessage: (m: any) => {
+      published.push(m);
+      return Promise.resolve();
+    },
+    // deno-lint-ignore no-explicit-any
+  } as any;
+
+  const r = await answerTaskEscalation(data, engine, "owner/repo#9:a", "do it");
+  assertEquals(r.ok, true);
+  assertEquals(r.escalationId, 1);
+  assertEquals(r.planKey, "owner/repo#9");
+  assertEquals(r.taskId, "a");
+
+  // Escalation row marked answered with the recorded answer.
+  // deno-lint-ignore no-explicit-any
+  const esc = stores.plan_escalations.rows.find((x: any) => x.id === 1) as any;
+  assertEquals(esc.status, "answered");
+  assertEquals(esc.answer, "do it");
+
+  // Answer mirrored onto the task row.
+  // deno-lint-ignore no-explicit-any
+  assertEquals((stores.plan_tasks.rows[0] as any).answer, "do it");
+
+  // Correlated resume message published on the shared constant channel.
+  assertEquals(published.length, 1);
+  assertEquals(published[0].name, "feature-escalation-answered");
+  assertEquals(published[0].correlationKey, "owner/repo#9:a");
+  assertEquals(published[0].variables.answer, "do it");
+
+  // Next-oldest open escalation re-surfaced on the plan row.
+  // deno-lint-ignore no-explicit-any
+  assertEquals((stores.plans.rows[0] as any).open_task_escalation_id, 2);
+});
+
+Deno.test("answerTaskEscalation is a no-op when no open escalation matches the correlation key", async () => {
+  const stores = escalationStores([]);
+  const data = memData(stores);
+  const engine = {
+    publishMessage: () => Promise.reject(new Error("should not publish")),
+    // deno-lint-ignore no-explicit-any
+  } as any;
+  const r = await answerTaskEscalation(data, engine, "owner/repo#9:missing", "x");
+  assertEquals(r.ok, false);
+});

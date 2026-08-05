@@ -6,7 +6,7 @@
 // (this override shadows the generic route entirely, so the fallback preserves it).
 import type { ActionHandler } from "@nanobpm/urban";
 import { answerEscalation } from "../app/service.ts";
-import { answerTaskEscalation } from "../app/plan.ts";
+import { answerTaskEscalation, FEATURE_ESCALATION_MESSAGE } from "../app/plan.ts";
 
 const handler: ActionHandler = async ({ body }, app) => {
   const b = (body ?? {}) as {
@@ -26,7 +26,7 @@ const handler: ActionHandler = async ({ body }, app) => {
     return { status: r.ok ? 200 : 404, body: r };
   }
 
-  if (name === "feature-escalation-answered") {
+  if (name === FEATURE_ESCALATION_MESSAGE) {
     // Implementation-phase task escalation (issue #25): correlationKey is the
     // task's `<plan_key>:<task_id>`; record the answer, resume the parked child,
     // and re-surface the next open escalation.
