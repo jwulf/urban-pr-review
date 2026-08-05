@@ -12,18 +12,50 @@ The job payload (stdin JSON) carries:
 - `variables.issue` — the parent issue reference, e.g. `owner/repo#123`, for
   context (`gh issue view`).
 - `variables.repo` — `owner/repo`.
+- `variables.answer` — **present only when you are resuming after an escalation**
+  (see below): the human's answer to the question you asked. It is null/empty on a
+  first run and a non-blank string only on a resume.
 
 You have `gh` / git authenticated for the target repository.
 
+## Your branch (deterministic — the same across a resume)
+
+Always use the branch **`feat/<task.id>`**. Because a resumed run gets a fresh
+process with no memory of your last run, the branch name MUST be derivable from
+`task.id` alone. On start, check whether it already exists on the remote
+(`git ls-remote --heads origin feat/<task.id>` or
+`gh pr list --head feat/<task.id> --state all`):
+
+- **It does not exist** → this is a first run. Branch off the default branch.
+- **It exists** → this is a **resume**. `git fetch` and check it out, read its diff
+  and any open (draft) PR, and **continue from there** — do not restart from
+  scratch. Fold in `variables.answer` as the guidance you were waiting on.
+
 ## What to do
 
-1. Clone / check out the repository's default branch.
-2. Create a new working branch for this slice (e.g. `feat/<task.id>`).
-3. Implement `task.prompt`. Keep the change scoped to this slice only.
-4. Commit (sign off — this repo family enforces DCO: `git commit -s`), push the
+1. Clone / check out the repository's default branch (first run) or your existing
+   `feat/<task.id>` branch (resume — see above).
+2. Implement `task.prompt`. Keep the change scoped to this slice only.
+3. Commit (sign off — this repo family enforces DCO: `git commit -s`), push the
    branch, and open a pull request with `gh pr create` describing the slice and
    linking the parent issue (`Depends-on:`/`Closes` as appropriate).
-5. Clean up any scratch clone/worktree you created outside the commit.
+4. Clean up any scratch clone/worktree you created outside the commit.
+
+## When you get stuck — escalate, don't discard your work
+
+If you cannot proceed without a human decision (ambiguous requirement, a design
+choice you can't make alone, a blocking external dependency), **do not** silently
+give up. Instead:
+
+1. **Preserve your work first.** Commit what you have (`git commit -s`), push
+   `feat/<task.id>`, and open a **draft** PR (`gh pr create --draft`) if one does
+   not exist yet. This is what lets a resumed agent (possibly on a different
+   machine) pick up exactly where you left off — your context lives in git, not in
+   this process.
+2. **Complete your job immediately** with `status: "escalated"` and a crisp
+   `question`. Do **not** block waiting for the answer — the process parks and
+   waits for a human; you will be re-dispatched (with `variables.answer` set) once
+   they respond, and you continue on the same branch.
 
 ## Output contract
 
@@ -40,9 +72,18 @@ Write a JSON object of **result variables** to the file named by the
 
 Rules:
 
-- `status` — `opened` (a PR was created), `blocked` (you could not proceed;
-  explain in `summary`), or `skipped` (nothing to do).
-- `pr` — the PR you opened as `owner/repo#<number>` (or its URL). The app enrolls
-  it into the review-convergence loop automatically. Omit / null it only when
-  `status` is not `opened`.
+- `status` — one of:
+  - `opened` — a PR was created (ready for review). Set `pr`.
+  - `escalated` — you need a human decision; set `question`, and set `pr` to the
+    **draft** PR you opened to preserve your work (if you managed to open one).
+  - `blocked` — you could not proceed and are **giving up** (no human can help);
+    explain in `summary`. Prefer `escalated` whenever a human answer would unblock
+    you.
+  - `skipped` — nothing to do.
+- `pr` — the PR as `owner/repo#<number>` (or its URL). For `opened` it is the
+  ready PR the app enrolls into the review-convergence loop automatically; for
+  `escalated` it is the draft PR preserving your work. Omit / null it for
+  `blocked` / `skipped`.
+- `question` — required when `status` is `escalated`: the specific decision you
+  need from a human.
 - `summary` — a short human-readable result.

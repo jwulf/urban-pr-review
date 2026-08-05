@@ -63,6 +63,10 @@
     {
       "taskType": "pr.record-results",
       "handler": "workers/record-results/worker.ts"
+    },
+    {
+      "taskType": "pr.persist-task-escalation",
+      "handler": "workers/persist-task-escalation/worker.ts"
     }
   ],
   "surfaces": {
@@ -102,6 +106,10 @@
     {
       "path": "/hooks/plan",
       "module": "actions/plan-hook.ts"
+    },
+    {
+      "path": "/hooks/feature-answer",
+      "module": "actions/feature-answer-hook.ts"
     }
   ]
 }

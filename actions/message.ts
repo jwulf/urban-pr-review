@@ -1,9 +1,12 @@
 // POST /app/actions/message — override the generic publishMessage action. For the
-// `escalation-answered` message we run the app's answer flow (record the answer, clear the
-// open escalation, then publish); any other message falls back to a plain publishMessage
+// `escalation-answered` message we run the review answer flow, and for
+// `feature-escalation-answered` the implementation-phase (per-task) answer flow
+// (issue #25): record the answer, resume the parked token, then re-surface the
+// next open escalation. Any other message falls back to a plain publishMessage
 // (this override shadows the generic route entirely, so the fallback preserves it).
 import type { ActionHandler } from "@nanobpm/urban";
 import { answerEscalation } from "../app/service.ts";
+import { answerTaskEscalation, FEATURE_ESCALATION_MESSAGE } from "../app/plan.ts";
 
 const handler: ActionHandler = async ({ body }, app) => {
   const b = (body ?? {}) as {
@@ -20,6 +23,18 @@ const handler: ActionHandler = async ({ body }, app) => {
     if (!prKey) return { status: 400, body: { error: "correlationKey is required" } };
     if (!answer) return { status: 400, body: { error: "answer is required" } };
     const r = await answerEscalation(app.data, app.engine, prKey, answer);
+    return { status: r.ok ? 200 : 404, body: r };
+  }
+
+  if (name === FEATURE_ESCALATION_MESSAGE) {
+    // Implementation-phase task escalation (issue #25): correlationKey is the
+    // task's `<plan_key>:<task_id>`; record the answer, resume the parked child,
+    // and re-surface the next open escalation.
+    const corrKey = String(b.correlationKey ?? "");
+    const answer = String((b.variables?.answer ?? "") as string).trim();
+    if (!corrKey) return { status: 400, body: { error: "correlationKey is required" } };
+    if (!answer) return { status: 400, body: { error: "answer is required" } };
+    const r = await answerTaskEscalation(app.data, app.engine, corrKey, answer);
     return { status: r.ok ? 200 : 404, body: r };
   }
 
