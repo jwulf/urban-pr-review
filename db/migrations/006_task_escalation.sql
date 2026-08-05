@@ -47,3 +47,6 @@ CREATE TABLE plan_escalations (
 
 CREATE INDEX idx_plan_escalations_plan ON plan_escalations(plan_key);
 CREATE INDEX idx_plan_escalations_open ON plan_escalations(plan_key, status);
+-- The persist worker and `answerTaskEscalation` look up the open row by
+-- (corr_key, status); index it to avoid a scan (mirrors escalations(pr_key, status)).
+CREATE INDEX idx_plan_escalations_corr ON plan_escalations(corr_key, status);

@@ -22,8 +22,8 @@ You have `gh` / git authenticated for the target repository.
 Always use the branch **`feat/<task.id>`**. Because a resumed run gets a fresh
 process with no memory of your last run, the branch name MUST be derivable from
 `task.id` alone. On start, check whether it already exists on the remote
-(`git ls-remote --heads origin feat/<task.id>` or `gh pr list --head feat/<task.id>
---state all`):
+(`git ls-remote --heads origin feat/<task.id>` or
+`gh pr list --head feat/<task.id> --state all`):
 
 - **It does not exist** → this is a first run. Branch off the default branch.
 - **It exists** → this is a **resume**. `git fetch` and check it out, read its diff

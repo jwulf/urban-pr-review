@@ -54,6 +54,9 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
   const corrKey = featureCorrKey(planKey, taskId);
   const question = str(job.variables.question) ?? "(no question provided)";
   const draftPr = str(job.variables.pr) ?? null;
+  // Prior-attempt context the escalating agent reported. Persist it so the UI
+  // and any later resume/debugging keep the task's summary instead of NULL.
+  const summary = str(job.variables.summary) ?? null;
   const ts = new Date().toISOString();
 
   const escTable = planEscalations(app.data);
@@ -85,6 +88,7 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
       status: "escalated",
       open_question: question,
       draft_pr_key: draftPr ?? t.draft_pr_key,
+      summary: summary ?? t.summary,
       corr_key: corrKey,
       updated_at: ts,
     });
