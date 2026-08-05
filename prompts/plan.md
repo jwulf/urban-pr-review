@@ -18,6 +18,16 @@ The job payload (stdin JSON) carries:
 Read the issue with `gh issue view <issue>` (title, body, comments). You have
 `gh` authenticated for the target repository.
 
+## Revising after a rejected review
+
+Your plan is adversarially reviewed before any agent is dispatched. If
+`variables.planFindings` is present, a reviewer **rejected your previous plan**:
+the findings are a numbered list of concrete defects (hidden dependencies, wrong
+or missing `dependsOn` edges, coverage gaps, non-self-contained prompts, violated
+sequencing intent). Address **every** point, then re-emit the **full** plan (all
+tasks, not just the changed ones) in the same output contract below. Do not argue
+with the findings in the plan; fix them.
+
 ## Step 0 — is this epic already decomposed? (do this first)
 
 Before decomposing anything yourself, check whether the issue is an **epic that

@@ -49,6 +49,10 @@
       "handler": "workers/record-plan/worker.ts"
     },
     {
+      "taskType": "pr.record-plan-review",
+      "handler": "workers/record-plan-review/worker.ts"
+    },
+    {
       "taskType": "pr.select-wave",
       "handler": "workers/select-wave/worker.ts"
     },
