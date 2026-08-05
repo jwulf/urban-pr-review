@@ -130,7 +130,7 @@ Deno.test("re-plan of a finished issue clears stale plan_reviews rows", async ()
   assertEquals(stores.plan_tasks.rows.length, 0);
 });
 
-// Red/green coverage for the implementation-phase escalation lifecycle (PR #28 review).
+// Red/green coverage for the implementation-phase escalation lifecycle (issue #25).
 //
 // `refreshOpenTaskEscalation` and `answerTaskEscalation` (issue #25) drive new stateful
 // behaviour — denormalising the plan's "surfaced" escalation, mirroring the answer onto the
