@@ -1,3 +1,10 @@
+# [0.10.0](https://github.com/jwulf/urban-pr-review/compare/v0.9.0...v0.10.0) (2026-08-05)
+
+
+### Features
+
+* gate a wave's implementation on the prior wave merging ([#30](https://github.com/jwulf/urban-pr-review/issues/30)) ([6f07fc4](https://github.com/jwulf/urban-pr-review/commit/6f07fc4771fc797ea5d61cd1c17aafce9f1c2dda))
+
 # [0.9.0](https://github.com/jwulf/urban-pr-review/compare/v0.8.0...v0.9.0) (2026-08-05)
 
 
