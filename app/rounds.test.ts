@@ -33,3 +33,11 @@ Deno.test("above the ceiling is clamped, not rejected", () => {
   assertEquals(clampRounds(1000, 20), MAX_ROUNDS_CEILING);
   assertEquals(clampRounds(String(MAX_ROUNDS_CEILING + 1), 20), MAX_ROUNDS_CEILING);
 });
+
+Deno.test("an oversized fallback is itself clamped to the ceiling", () => {
+  // A blank/invalid input falls back — but the fallback must not bypass the ceiling.
+  assertEquals(clampRounds("", MAX_ROUNDS_CEILING + 50), MAX_ROUNDS_CEILING);
+  assertEquals(clampRounds("   ", MAX_ROUNDS_CEILING + 1), MAX_ROUNDS_CEILING);
+  assertEquals(clampRounds(0, MAX_ROUNDS_CEILING + 999), MAX_ROUNDS_CEILING);
+  assertEquals(clampRounds("abc", MAX_ROUNDS_CEILING + 1), MAX_ROUNDS_CEILING);
+});

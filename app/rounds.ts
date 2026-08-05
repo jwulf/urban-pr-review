@@ -9,11 +9,15 @@ export const MAX_ROUNDS_CEILING = 100;
 /** Coerce an arbitrary caller-supplied round cap into a sane positive integer, falling back to
  * `fallback` when the value is absent, blank, non-numeric, zero/negative, or NaN. The submit form
  * sends strings (the runtime renders every field as text), so this accepts `string | number |
- * unknown`. Values above MAX_ROUNDS_CEILING are clamped down rather than rejected. */
+ * unknown`. Values above MAX_ROUNDS_CEILING are clamped down rather than rejected — and the same
+ * clamp is applied to `fallback`, so an oversized fallback can never bypass the safety ceiling. */
 export function clampRounds(value: unknown, fallback: number): number {
+  const safeFallback = Number.isFinite(fallback)
+    ? Math.min(Math.max(Math.trunc(fallback), 1), MAX_ROUNDS_CEILING)
+    : 1;
   const n = typeof value === "number" ? value : Number(String(value ?? "").trim());
-  if (!Number.isFinite(n)) return fallback;
+  if (!Number.isFinite(n)) return safeFallback;
   const i = Math.trunc(n);
-  if (i < 1) return fallback;
+  if (i < 1) return safeFallback;
   return Math.min(i, MAX_ROUNDS_CEILING);
 }
