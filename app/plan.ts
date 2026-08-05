@@ -76,7 +76,9 @@ export const planTaskDeps = (data: DataLayer) =>
   data.table<PlanTaskDep>("plan_task_deps", "plan_key");
 
 /** One adversarial plan-review round (006_plan_review.sql): the `senior:plan-review` agent's
- * verdict on the plan before fan-out. Append-only; the current round is `count(plan_reviews)`.
+ * verdict on the plan before fan-out. Append-only within a plan run; the current round is
+ * `count(plan_reviews)`. Re-planning a finished issue clears the prior rows (see startPlan) so
+ * the round index restarts at 0.
  * `job_key` is the engine job key that wrote the row — an idempotency guard so a retried job
  * (crash/timeout after the insert) reuses its row instead of appending a duplicate round. */
 export interface PlanReview {
@@ -147,6 +149,12 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
     for (const t of await planTasks(data).find({ plan_key: parsed.planKey })) {
       await planTasks(data).delete(t.id);
     }
+    // `plan_reviews` is append-only and the review round is derived from
+    // `count(plan_reviews)`, so stale rows from the prior run would inflate the
+    // next round index and trip `reviewExhausted` early (bypassing the gate).
+    // Clear them here — the table is keyed on `plan_key`, so one delete drops the
+    // whole set (mirrors how record-plan clears `plan_task_deps`).
+    await planReviews(data).delete(parsed.planKey);
     await table.update(parsed.planKey, {
       status: "planning",
       task_count: 0,
