@@ -76,19 +76,32 @@ export const planTaskDeps = (data: DataLayer) =>
   data.table<PlanTaskDep>("plan_task_deps", "plan_key");
 
 /** One adversarial plan-review round (006_plan_review.sql): the `senior:plan-review` agent's
- * verdict on the plan before fan-out. Append-only; the current round is `count(plan_reviews)`. */
+ * verdict on the plan before fan-out. Append-only; the current round is `count(plan_reviews)`.
+ * `job_key` is the engine job key that wrote the row — an idempotency guard so a retried job
+ * (crash/timeout after the insert) reuses its row instead of appending a duplicate round. */
 export interface PlanReview {
   plan_key: string;
   round: number;
   approved: number;
   findings: string | null;
   created_at: string;
+  job_key: string | null;
 }
 export const planReviews = (data: DataLayer) => data.table<PlanReview>("plan_reviews", "plan_key");
 
+/** Read a positive-integer env override, falling back when unset/blank/invalid. A bad value
+ * (e.g. "", "abc", "0", "2.5") must NOT silently become `NaN`/`0` — that would make the round
+ * cap `round + 1 >= cap` always false and allow an unbounded revise loop. */
+export function positiveIntEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw == null || raw.trim() === "") return fallback;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : fallback;
+}
+
 /** Max adversarial plan-review rounds before the fan-out proceeds regardless (so a reviewer that
  * never approves can't dead-lock the plan). The last round's findings are still recorded. */
-export const MAX_PLAN_REVIEW_ROUNDS = Number(process.env.NANO_PLAN_REVIEW_ROUNDS ?? 3);
+export const MAX_PLAN_REVIEW_ROUNDS = positiveIntEnv("NANO_PLAN_REVIEW_ROUNDS", 3);
 
 /** A plan is "done" in exactly these states; everything else (planning, dispatched)
  * is in flight. The cancel guard and the active view key off this. */
