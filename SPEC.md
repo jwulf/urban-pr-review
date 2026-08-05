@@ -132,9 +132,13 @@ Notes:
 | `prUrl` | string | canonical PR URL |
 | `repo` | string | `owner/name` |
 | `prNumber` | int | |
-| `prompt` | string | the base instructions — delivered via the `{{review-round}}` model **template header** (`prompts/review-round.md`), not a job variable |
 | `round` | int | 1-based round counter |
 | `answer` | string? | present only when resuming from an escalation |
+
+The base instructions are **not** a job variable: they are delivered as a model
+**template header** on the `senior:pr-review` task — header key
+`io.nanobpm.agentTask.task.prompt` with value `{{review-round}}`, substituted with
+`prompts/review-round.md` at deploy time.
 
 **Output** (job result variables):
 | var | type | notes |

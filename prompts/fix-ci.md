@@ -15,7 +15,7 @@ for CI to re-run.
 | `prUrl`    | canonical PR URL                                                   |
 | `repo`     | `owner/name`                                                       |
 | `prNumber` | PR number                                                          |
-| `ciFixRound` | 1-based attempt counter (you may have tried before)             |
+| `ciFixRound` | 0-based count of attempts already made (0 on the first try)      |
 | `prompt`   | this document, plus (appended) the list of failing check names     |
 
 The **failing check names** are appended to this prompt at dispatch — treat that

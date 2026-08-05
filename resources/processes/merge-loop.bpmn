@@ -64,6 +64,7 @@
           <nano:extend name="prKey" type="string" />
           <nano:extend name="repo" type="string" />
           <nano:extend name="prNumber" type="integer" />
+          <nano:extend name="prUrl" type="string" />
           <nano:extend name="ciFixRound" type="integer" />
         </nano:shape>
         <nano:shape id="FixCiOut" name="CI fix — result">
