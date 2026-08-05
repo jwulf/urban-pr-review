@@ -47,7 +47,7 @@ let shuttingDown = false;
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 async function pollLoop(): Promise<void> {
   try {
-    if (app.data) await pollOnce(app.data, engine, GITHUB_TOKEN);
+    if (app.data) await pollOnce(app.data, engine, GITHUB_TOKEN, { restAddress, token: process.env.CAMUNDA_TOKEN });
   } catch (err) {
     console.error("poll error:", err);
   }
