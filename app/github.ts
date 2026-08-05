@@ -91,6 +91,89 @@ export async function fetchPrReviews(
   return (await r.json()) as GhReview[];
 }
 
+// ── Copilot re-request (review-wait liveness) ───────────────────────────────
+// A PR parked in `waiting_review` blocks on a *fresh* Copilot review. Copilot won't
+// spontaneously re-review a round with no new commit, and routinely dismisses a re-request, so
+// the poller must actively solicit the next round's review. Reliable re-request is the REST
+// reviewers endpoint with the exact `[bot]` login below — the bare `Copilot` login and the
+// GraphQL `requestReviews` mutation both silently no-op (GraphQL resolves Users only).
+
+/** The exact reviewer login GitHub's REST reviewers endpoint accepts for the automated Copilot
+ * reviewer. NOT the bare `Copilot` display login (which no-ops) and NOT the `copilot-swe-agent`
+ * coding bot. */
+export const COPILOT_REVIEWER = "copilot-pull-request-reviewer[bot]";
+
+/** The `requested_reviewers` GET surfaces the pending Copilot reviewer under its *display* login
+ * `Copilot`, whereas the POST requires the `[bot]` login above — so a pending check must match
+ * either spelling. */
+function isCopilot(login: string | undefined): boolean {
+  return login === "Copilot" || login === COPILOT_REVIEWER;
+}
+
+/** Whether Copilot is currently a *pending* (requested-but-not-yet-submitted) reviewer on the PR.
+ * The poller uses this to avoid re-requesting a review that is already in flight. `null` when no
+ * transport is usable (poller idles); throws on a genuine transport failure. */
+export async function hasPendingCopilotReviewer(
+  repo: string,
+  number: number | string,
+  token: string,
+): Promise<boolean | null> {
+  const path = `repos/${repo}/pulls/${number}/requested_reviewers`;
+  let users: { login?: string }[];
+  if (await useGh()) {
+    const out = await runGh(["api", path, "-H", "Accept: application/vnd.github+json"]);
+    users = (JSON.parse(out) as { users?: { login?: string }[] }).users ?? [];
+  } else {
+    if (!token) return null;
+    const r = await fetch(`https://api.github.com/${path}`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
+    });
+    if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
+    users = ((await r.json()) as { users?: { login?: string }[] }).users ?? [];
+  }
+  return users.some((u) => isCopilot(u.login));
+}
+
+/** Request a fresh Copilot review on the PR (REST reviewers endpoint, exact `[bot]` login), so
+ * the process's `review-ready` catch can eventually fire. Returns `"requested"` on success,
+ * `"unavailable"` when Copilot is not an assignable reviewer on that repo (HTTP 422 — e.g.
+ * Copilot review not enabled there), or `null` when no transport is usable. Never throws for the
+ * 422 "not assignable" case; only a genuine transport failure propagates. */
+export async function requestCopilotReview(
+  repo: string,
+  number: number | string,
+  token: string,
+): Promise<"requested" | "unavailable" | null> {
+  const path = `repos/${repo}/pulls/${number}/requested_reviewers`;
+  if (await useGh()) {
+    try {
+      await runGh(["api", path, "-X", "POST", "-f", `reviewers[]=${COPILOT_REVIEWER}`]);
+      return "requested";
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // gh surfaces the 422 as its HTTP status and/or the "Unprocessable"/"not be requested"
+      // body; treat any of those as "Copilot isn't assignable here" rather than a hard failure.
+      if (/\b422\b|unprocessable|cannot be requested|not.*(assignable|be requested)/i.test(msg)) {
+        return "unavailable";
+      }
+      throw err;
+    }
+  }
+  if (!token) return null;
+  const r = await fetch(`https://api.github.com/${path}`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: "application/vnd.github+json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ reviewers: [COPILOT_REVIEWER] }),
+  });
+  if (r.ok) return "requested";
+  if (r.status === 422) return "unavailable";
+  throw new Error(`github ${r.status} ${r.statusText}: ${(await r.text()).slice(0, 300)}`.trim());
+}
+
 // ── Merge stage (SPEC §11) ──────────────────────────────────────────────────
 // The same two-transport model (gh | token) backs the merge stage: read a PR's merge state to
 // decide when it is landable, and perform the merge (directly or via the repo's merge queue).

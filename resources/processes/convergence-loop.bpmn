@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:nano="https://nanobpm.io/schema/shapes/1.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="Definitions_urban_pr_review" targetNamespace="http://nanobpm.io/urban-pr-review">
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" xmlns:nano="https://nanobpm.io/schema/shapes/1.0" id="Definitions_urban_pr_review" targetNamespace="http://nanobpm.io/urban-pr-review">
   <bpmn:message id="Message_reviewReady" name="review-ready">
     <bpmn:extensionElements>
       <zeebe:subscription correlationKey="=prKey" />
@@ -73,26 +73,12 @@
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="senior:pr-review" />
         <zeebe:taskHeaders>
-          <!-- Agent prompt authored in the model as a deploy-time template: the
-               `{{review-round}}` token is substituted with prompts/review-round.md at deploy
-               (see models.templates in nano.app.json). Delivered via the reserved agent-task
-               header namespace; the harness reads it as task.prompt. -->
           <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{review-round}}" />
         </zeebe:taskHeaders>
         <zeebe:properties>
           <zeebe:property name="io.nanobpm.dataEnvelope.in" value="PrReviewRoundIn" />
           <zeebe:property name="io.nanobpm.dataEnvelope.out" value="PrReviewRoundOut" />
         </zeebe:properties>
-        <!--
-          Consume-once escalation guidance: `answer` is merged into the instance
-          scope when an `escalation-answered` message correlates (at `wait-answer`,
-          which has no ioMapping, so it lands at root). The input envelope projects
-          it into THIS round's agent job at activation; this output mapping then
-          clears it at completion so the one-time human guidance influences exactly
-          the round it was given for and does not leak into later rounds. Additive
-          to the envelope's status/summary/question outputs (the engine merges the
-          job result first, then applies output mappings).
-        -->
         <zeebe:ioMapping>
           <zeebe:output source="=null" target="answer" />
         </zeebe:ioMapping>
@@ -123,16 +109,43 @@
       <bpmn:incoming>f_guardOk</bpmn:incoming>
       <bpmn:outgoing>f_roundWait</bpmn:outgoing>
     </bpmn:serviceTask>
+    <bpmn:eventBasedGateway id="gw-review-wait" name="review ready or timeout?">
+      <bpmn:incoming>f_roundWait</bpmn:incoming>
+      <bpmn:outgoing>f_toReviewWait</bpmn:outgoing>
+      <bpmn:outgoing>f_toReviewTimeout</bpmn:outgoing>
+    </bpmn:eventBasedGateway>
     <bpmn:intermediateCatchEvent id="wait-review" name="Wait: review ready">
       <bpmn:extensionElements>
         <zeebe:ioMapping>
           <zeebe:output source="=round + 1" target="round" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
-      <bpmn:incoming>f_roundWait</bpmn:incoming>
+      <bpmn:incoming>f_toReviewWait</bpmn:incoming>
       <bpmn:outgoing>f_reviewLoop</bpmn:outgoing>
       <bpmn:messageEventDefinition id="med_reviewReady" messageRef="Message_reviewReady" />
     </bpmn:intermediateCatchEvent>
+    <bpmn:intermediateCatchEvent id="wait-review-timeout" name="Wait: review timeout">
+      <bpmn:incoming>f_toReviewTimeout</bpmn:incoming>
+      <bpmn:outgoing>f_reviewStalled</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="ted_reviewTimeout">
+        <bpmn:timeDuration xsi:type="bpmn:tFormalExpression">=reviewWaitTimeout</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:serviceTask id="persist-review-stalled" name="Escalate: review stalled">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pr.persist-escalation" />
+        <zeebe:properties>
+          <zeebe:property name="io.nanobpm.dataEnvelope.in" value="PrPersistEscalationIn" />
+          <zeebe:property name="io.nanobpm.dataEnvelope.out" value="PrPersistEscalationOut" />
+        </zeebe:properties>
+        <zeebe:ioMapping>
+          <zeebe:input source="=&#34;blocked&#34;" target="status" />
+          <zeebe:input source="=&#34;No review arrived within the review-wait timeout (&#34; + reviewWaitTimeout + &#34;). A human must decide how to proceed (reply to resume the loop).&#34;" target="question" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_reviewStalled</bpmn:incoming>
+      <bpmn:outgoing>f_stalledWait</bpmn:outgoing>
+    </bpmn:serviceTask>
     <bpmn:serviceTask id="persist-escalation" name="Record escalation">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="pr.persist-escalation" />
@@ -162,6 +175,7 @@
     <bpmn:intermediateCatchEvent id="wait-answer" name="Wait: escalation answered">
       <bpmn:incoming>f_escWait</bpmn:incoming>
       <bpmn:incoming>f_maxWait</bpmn:incoming>
+      <bpmn:incoming>f_stalledWait</bpmn:incoming>
       <bpmn:outgoing>f_answerLoop</bpmn:outgoing>
       <bpmn:messageEventDefinition id="med_escalationAnswered" messageRef="Message_escalationAnswered" />
     </bpmn:intermediateCatchEvent>
@@ -191,131 +205,178 @@
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=round &gt;= maxRounds</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="f_guardOk" name="continue" sourceRef="gw-guard" targetRef="persist-round" />
-    <bpmn:sequenceFlow id="f_roundWait" sourceRef="persist-round" targetRef="wait-review" />
+    <bpmn:sequenceFlow id="f_roundWait" sourceRef="persist-round" targetRef="gw-review-wait" />
+    <bpmn:sequenceFlow id="f_toReviewWait" sourceRef="gw-review-wait" targetRef="wait-review" />
+    <bpmn:sequenceFlow id="f_toReviewTimeout" sourceRef="gw-review-wait" targetRef="wait-review-timeout" />
     <bpmn:sequenceFlow id="f_reviewLoop" sourceRef="wait-review" targetRef="review-round" />
+    <bpmn:sequenceFlow id="f_reviewStalled" sourceRef="wait-review-timeout" targetRef="persist-review-stalled" />
+    <bpmn:sequenceFlow id="f_stalledWait" sourceRef="persist-review-stalled" targetRef="wait-answer" />
     <bpmn:sequenceFlow id="f_escWait" sourceRef="persist-escalation" targetRef="wait-answer" />
     <bpmn:sequenceFlow id="f_maxWait" sourceRef="persist-escalation-maxrounds" targetRef="wait-answer" />
     <bpmn:sequenceFlow id="f_answerLoop" sourceRef="wait-answer" targetRef="review-round" />
     <bpmn:sequenceFlow id="f_finalize" sourceRef="persist-converged" targetRef="End" />
   </bpmn:process>
-  <bpmndi:BPMNDiagram id="BPMNDiagram_1">
-    <bpmndi:BPMNPlane id="BPMNPlane_1" bpmnElement="convergence-loop">
-      <bpmndi:BPMNShape id="di_Start" bpmnElement="Start">
-        <dc:Bounds x="152" y="180" width="36" height="36" />
+  <bpmndi:BPMNDiagram id="BPMNDiagram_convergence-loop">
+    <bpmndi:BPMNPlane id="BPMNPlane_convergence-loop" bpmnElement="convergence-loop">
+      <bpmndi:BPMNShape id="BPMNShape_Start" bpmnElement="Start">
+        <dc:Bounds x="80" y="102" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="140" y="223" width="61" height="14" />
+          <dc:Bounds x="63" y="143" width="70" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_review-round" bpmnElement="review-round">
-        <dc:Bounds x="240" y="158" width="100" height="80" />
+      <bpmndi:BPMNShape id="BPMNShape_review-round" bpmnElement="review-round">
+        <dc:Bounds x="216" y="80" width="100" height="80" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_gw-status" bpmnElement="gw-status" isMarkerVisible="true">
-        <dc:Bounds x="400" y="173" width="50" height="50" />
+      <bpmndi:BPMNShape id="BPMNShape_gw-status" bpmnElement="gw-status" isMarkerVisible="true">
+        <dc:Bounds x="416" y="95" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="410" y="230" width="34" height="14" />
+          <dc:Bounds x="415" y="76" width="53" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_gw-guard" bpmnElement="gw-guard" isMarkerVisible="true">
-        <dc:Bounds x="520" y="173" width="50" height="50" />
+      <bpmndi:BPMNShape id="BPMNShape_gw-guard" bpmnElement="gw-guard" isMarkerVisible="true">
+        <dc:Bounds x="591" y="255" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="551" y="230" width="58" height="14" />
+          <dc:Bounds x="574" y="310" width="85" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_persist-round" bpmnElement="persist-round">
-        <dc:Bounds x="640" y="158" width="100" height="80" />
+      <bpmndi:BPMNShape id="BPMNShape_persist-round" bpmnElement="persist-round">
+        <dc:Bounds x="766" y="240" width="100" height="80" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_wait-review" bpmnElement="wait-review">
-        <dc:Bounds x="812" y="180" width="36" height="36" />
+      <bpmndi:BPMNShape id="BPMNShape_gw-review-wait" bpmnElement="gw-review-wait" isMarkerVisible="true">
+        <dc:Bounds x="966" y="255" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="792" y="223" width="78" height="14" />
+          <dc:Bounds x="947" y="222" width="88" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_persist-escalation" bpmnElement="persist-escalation">
-        <dc:Bounds x="375" y="300" width="100" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_persist-escalation-maxrounds" bpmnElement="persist-escalation-maxrounds">
-        <dc:Bounds x="640" y="300" width="100" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_wait-answer" bpmnElement="wait-answer">
-        <dc:Bounds x="758" y="412" width="36" height="36" />
+      <bpmndi:BPMNShape id="BPMNShape_wait-review" bpmnElement="wait-review">
+        <dc:Bounds x="1116" y="262" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="804" y="416" width="78" height="27" />
+          <dc:Bounds x="1090" y="229" width="88" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_persist-converged" bpmnElement="persist-converged">
-        <dc:Bounds x="520" y="60" width="100" height="80" />
-      </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="di_End" bpmnElement="End">
-        <dc:Bounds x="680" y="82" width="36" height="36" />
+      <bpmndi:BPMNShape id="BPMNShape_wait-review-timeout" bpmnElement="wait-review-timeout">
+        <dc:Bounds x="1116" y="422" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="676" y="125" width="45" height="14" />
+          <dc:Bounds x="1106" y="375" width="56" height="42" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNEdge id="edge_f_start" bpmnElement="f_start">
-        <di:waypoint x="188" y="198" />
-        <di:waypoint x="240" y="198" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_toStatus" bpmnElement="f_toStatus">
-        <di:waypoint x="340" y="198" />
-        <di:waypoint x="400" y="198" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_converged" bpmnElement="f_converged">
-        <di:waypoint x="425" y="173" />
-        <di:waypoint x="425" y="100" />
-        <di:waypoint x="520" y="100" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_addressed" bpmnElement="f_addressed">
-        <di:waypoint x="450" y="198" />
-        <di:waypoint x="520" y="198" />
-      </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_escalate" bpmnElement="f_escalate">
-        <di:waypoint x="425" y="223" />
-        <di:waypoint x="425" y="300" />
+      <bpmndi:BPMNShape id="BPMNShape_persist-review-stalled" bpmnElement="persist-review-stalled">
+        <dc:Bounds x="1252" y="400" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_persist-escalation" bpmnElement="persist-escalation">
+        <dc:Bounds x="566" y="720" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_persist-escalation-maxrounds" bpmnElement="persist-escalation-maxrounds">
+        <dc:Bounds x="766" y="560" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_wait-answer" bpmnElement="wait-answer">
+        <dc:Bounds x="1452" y="422" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="436" y="254" width="67" height="27" />
+          <dc:Bounds x="1433" y="375" width="74" height="42" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_persist-converged" bpmnElement="persist-converged">
+        <dc:Bounds x="566" y="80" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_End" bpmnElement="End">
+        <dc:Bounds x="798" y="102" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="782" y="143" width="69" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_start" bpmnElement="f_start">
+        <di:waypoint x="116" y="120" />
+        <di:waypoint x="216" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toStatus" bpmnElement="f_toStatus">
+        <di:waypoint x="316" y="120" />
+        <di:waypoint x="416" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_converged" bpmnElement="f_converged">
+        <di:waypoint x="466" y="120" />
+        <di:waypoint x="566" y="120" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="483" y="98" width="67" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_guardMax" bpmnElement="f_guardMax">
-        <di:waypoint x="545" y="223" />
-        <di:waypoint x="545" y="340" />
-        <di:waypoint x="640" y="340" />
+      <bpmndi:BPMNEdge id="BPMNEdge_f_finalize" bpmnElement="f_finalize">
+        <di:waypoint x="666" y="120" />
+        <di:waypoint x="798" y="120" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_guardOk" bpmnElement="f_guardOk">
+        <di:waypoint x="641" y="280" />
+        <di:waypoint x="766" y="280" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="561" y="272" width="58" height="14" />
+          <dc:Bounds x="664" y="258" width="60" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_guardOk" bpmnElement="f_guardOk">
-        <di:waypoint x="570" y="198" />
-        <di:waypoint x="640" y="198" />
+      <bpmndi:BPMNEdge id="BPMNEdge_f_roundWait" bpmnElement="f_roundWait">
+        <di:waypoint x="866" y="280" />
+        <di:waypoint x="966" y="280" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_roundWait" bpmnElement="f_roundWait">
-        <di:waypoint x="740" y="198" />
-        <di:waypoint x="812" y="198" />
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toReviewWait" bpmnElement="f_toReviewWait">
+        <di:waypoint x="1016" y="280" />
+        <di:waypoint x="1116" y="280" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_reviewLoop" bpmnElement="f_reviewLoop">
-        <di:waypoint x="830" y="180" />
-        <di:waypoint x="830" y="30" />
-        <di:waypoint x="290" y="30" />
-        <di:waypoint x="290" y="158" />
+      <bpmndi:BPMNEdge id="BPMNEdge_f_reviewLoop" bpmnElement="f_reviewLoop">
+        <di:waypoint x="1134" y="298" />
+        <di:waypoint x="1134" y="340" />
+        <di:waypoint x="266" y="340" />
+        <di:waypoint x="266" y="160" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_escWait" bpmnElement="f_escWait">
-        <di:waypoint x="425" y="380" />
-        <di:waypoint x="425" y="430" />
-        <di:waypoint x="758" y="430" />
+      <bpmndi:BPMNEdge id="BPMNEdge_f_addressed" bpmnElement="f_addressed">
+        <di:waypoint x="441" y="145" />
+        <di:waypoint x="441" y="280" />
+        <di:waypoint x="591" y="280" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="483" y="258" width="67" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_maxWait" bpmnElement="f_maxWait">
-        <di:waypoint x="740" y="340" />
-        <di:waypoint x="776" y="340" />
-        <di:waypoint x="776" y="412" />
+      <bpmndi:BPMNEdge id="BPMNEdge_f_escalate" bpmnElement="f_escalate">
+        <di:waypoint x="441" y="145" />
+        <di:waypoint x="441" y="760" />
+        <di:waypoint x="566" y="760" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="446" y="506" width="81" height="28" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_answerLoop" bpmnElement="f_answerLoop">
-        <di:waypoint x="776" y="448" />
-        <di:waypoint x="776" y="520" />
-        <di:waypoint x="290" y="520" />
-        <di:waypoint x="290" y="238" />
+      <bpmndi:BPMNEdge id="BPMNEdge_f_guardMax" bpmnElement="f_guardMax">
+        <di:waypoint x="641" y="280" />
+        <di:waypoint x="746" y="280" />
+        <di:waypoint x="746" y="600" />
+        <di:waypoint x="766" y="600" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="751" y="433" width="74" height="14" />
+        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="edge_f_finalize" bpmnElement="f_finalize">
-        <di:waypoint x="620" y="100" />
-        <di:waypoint x="680" y="100" />
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toReviewTimeout" bpmnElement="f_toReviewTimeout">
+        <di:waypoint x="991" y="305" />
+        <di:waypoint x="991" y="440" />
+        <di:waypoint x="1116" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_reviewStalled" bpmnElement="f_reviewStalled">
+        <di:waypoint x="1152" y="440" />
+        <di:waypoint x="1252" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_stalledWait" bpmnElement="f_stalledWait">
+        <di:waypoint x="1352" y="440" />
+        <di:waypoint x="1452" y="440" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_escWait" bpmnElement="f_escWait">
+        <di:waypoint x="666" y="760" />
+        <di:waypoint x="1470" y="760" />
+        <di:waypoint x="1470" y="458" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_maxWait" bpmnElement="f_maxWait">
+        <di:waypoint x="866" y="600" />
+        <di:waypoint x="1470" y="600" />
+        <di:waypoint x="1470" y="458" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_answerLoop" bpmnElement="f_answerLoop">
+        <di:waypoint x="1470" y="458" />
+        <di:waypoint x="1470" y="500" />
+        <di:waypoint x="266" y="500" />
+        <di:waypoint x="266" y="160" />
       </bpmndi:BPMNEdge>
     </bpmndi:BPMNPlane>
   </bpmndi:BPMNDiagram>

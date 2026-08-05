@@ -13,9 +13,12 @@ import {
   fetchPrMeta,
   fetchPrReviews,
   fetchPrState,
+  hasPendingCopilotReviewer,
   type MergeMethod,
+  requestCopilotReview,
 } from "./github.ts";
 import { planTasks, plans } from "./plan.ts";
+import { clampNudgeMinutes, reviewWaitTimeout } from "./reviewWait.ts";
 import { waveMergeTargets } from "./waves.ts";
 
 /** The BPMN process that drives review convergence (`resources/processes/convergence-loop.bpmn`). */
@@ -38,6 +41,18 @@ export const MAX_ROUNDS = clampRounds(process.env.NANO_PR_MAX_ROUNDS, 20);
  * `NANO_PR_MAX_CI_FIX_ROUNDS=0` to disable auto-fix (a blocked PR escalates immediately). Unlike
  * the review-round cap this allows 0 (disable), so it parses directly rather than via clampRounds. */
 export const MAX_CI_FIX_ROUNDS = clampCiFixBudget(process.env.NANO_PR_MAX_CI_FIX_ROUNDS, 3);
+
+/** How long the convergence loop waits for a fresh review before escalating to a human. Seeded as
+ * the `reviewWaitTimeout` process variable at submit and evaluated by the process's
+ * `wait-review-timeout` timer catch (the timer arm of the event-based-gateway race against
+ * `review-ready`). ISO-8601 duration; a malformed `NANO_PR_REVIEW_WAIT_TIMEOUT` falls back to the
+ * default so an uninterpretable timer is never deployed. */
+export const REVIEW_WAIT_TIMEOUT = reviewWaitTimeout(process.env.NANO_PR_REVIEW_WAIT_TIMEOUT);
+
+/** Cooldown (ms) between the poller's automatic Copilot re-request nudges for a single waiting PR.
+ * Copilot dismisses re-requests, so the poller retries — but not on every tick; this throttles it
+ * to one attempt per window. Set via `NANO_PR_REVIEW_NUDGE_MINUTES` (minutes). */
+export const REVIEW_NUDGE_MS = clampNudgeMinutes(process.env.NANO_PR_REVIEW_NUDGE_MINUTES) * 60_000;
 
 /** Whether a converged PR is automatically driven to merge (the merge-loop). Default on; set
  * `NANO_PR_AUTO_MERGE=0` to stop at `converged` (review-only mode). */
@@ -93,6 +108,10 @@ interface PullRequest {
   // queued (created, not yet activated) or the process isn't at review-round.
   active_worker: string | null;
   lease_until: string | null;
+  // Review-wait liveness (008_review_nudge.sql): ISO ts the poller last re-requested a Copilot
+  // review for this PR, so the nudge is throttled to one attempt per REVIEW_NUDGE_MS window.
+  // NULL means never nudged.
+  last_nudge_at: string | null;
 }
 
 interface PrDependency {
@@ -214,6 +233,7 @@ export async function submitPr(
       title: title ?? existing.title,
       waiting_since: null,
       last_review_id: null,
+      last_nudge_at: null,
       outcome: null,
       converged_at: null,
       merged_at: null,
@@ -241,6 +261,7 @@ export async function submitPr(
       prKey: parsed.prKey,
       round: 1,
       maxRounds: clampRounds(maxRounds, MAX_ROUNDS),
+      reviewWaitTimeout: REVIEW_WAIT_TIMEOUT,
     },
   });
   if (processInstanceKey != null) {
@@ -408,7 +429,13 @@ async function pollReviews(data: DataLayer, engine: EngineClient, token: string)
         )
         .sort((a, b) => a.id - b.id)
         .pop();
-      if (!fresh) continue;
+      if (!fresh) {
+        // No fresh review yet. Copilot won't re-review a round with no new commit and dismisses
+        // re-requests, so actively (re-)solicit the next review — throttled to one attempt per
+        // REVIEW_NUDGE_MS window. The process's timer arm is the backstop if this never lands.
+        await maybeRerequestReview(data, pr, token);
+        continue;
+      }
       await prs(data).update(prKey, { last_review_id: fresh.id, status: "converging", updated_at: now() });
       await engine.publishMessage({
         name: "review-ready",
@@ -419,6 +446,32 @@ async function pollReviews(data: DataLayer, engine: EngineClient, token: string)
     } catch (err) {
       console.error(`[poller] ${prKey}: ${err}`);
     }
+  }
+}
+
+/** Ensure a Copilot review is in flight for a PR still waiting, throttled to one attempt per
+ * REVIEW_NUDGE_MS window. Skips when Copilot is already a pending reviewer (a review is coming);
+ * otherwise re-requests one and records the nudge. This is the primary liveness mechanism — the
+ * process's `wait-review-timeout` timer arm only fires (escalating to a human) when even repeated
+ * nudges fail to produce a review. A transport failure logs-and-returns without burning the
+ * cooldown, so it retries next tick. */
+async function maybeRerequestReview(data: DataLayer, pr: PullRequest, token: string) {
+  const since = pr.last_nudge_at ? Date.parse(pr.last_nudge_at) : 0;
+  if (Number.isFinite(since) && Date.now() - since < REVIEW_NUDGE_MS) return; // within cooldown
+  try {
+    const pending = await hasPendingCopilotReviewer(pr.repo, pr.number, token);
+    if (pending === null) return; // no usable transport → don't spend the cooldown
+    // Record the check now so the cooldown holds whether or not we go on to request — this
+    // bounds the reviewer-state calls to one per window even while a request stays pending.
+    await prs(data).update(pr.pr_key, { last_nudge_at: now() });
+    if (pending) return; // a review is already in flight
+    const res = await requestCopilotReview(pr.repo, pr.number, token);
+    if (res === "requested") console.log(`[poller] re-requested Copilot review -> ${pr.pr_key}`);
+    else if (res === "unavailable") {
+      console.warn(`[poller] Copilot not an assignable reviewer on ${pr.pr_key}; relying on timeout`);
+    }
+  } catch (err) {
+    console.error(`[poller] ${pr.pr_key} re-request: ${err}`);
   }
 }
 
