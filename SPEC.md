@@ -85,11 +85,12 @@ known at submit time, carried as a process variable and stored on the DB row.
 (start: pr-submitted)                      vars in: { repo, prNumber, prUrl, prKey }
       │
       ▼
-[Register PR & load prompt]  (script/handler)   → insert DB row; read prompts/review-round.md
-      │                                            set prompt, round = 1
+[Register PR]  (script/handler)   → insert DB row; round = 1
+      │                              (base prompt delivered via the {{review-round}} model
+      │                               template header, not a process variable)
       ▼
 ┌──▶ [Review round]  (service task, taskType: senior:pr-review)
-│         in : prUrl, repo, prNumber, prompt, round, answer?
+│         in : prUrl, repo, prNumber, round, answer?   (prompt via task header)
 │         out: status, summary, question?
 │         │
 │         ▼
@@ -131,7 +132,7 @@ Notes:
 | `prUrl` | string | canonical PR URL |
 | `repo` | string | `owner/name` |
 | `prNumber` | int | |
-| `prompt` | string | the full instructions text (from `prompts/review-round.md`) |
+| `prompt` | string | the base instructions — delivered via the `{{review-round}}` model **template header** (`prompts/review-round.md`), not a job variable |
 | `round` | int | 1-based round counter |
 | `answer` | string? | present only when resuming from an escalation |
 
@@ -171,7 +172,7 @@ Consequences the prompt (`prompts/review-round.md`) encodes:
 | `review-ready` | `prKey` | **poller** | `{reviewId, reviewState, submittedAt}` |
 | `escalation-answered` | `prKey` | UI answer route | `{answer, escalationId}` |
 | `deps-cleared` | `prKey` | **poller** (merge) | — (all `Depends-on` PRs merged) |
-| `merge-ready` | `prKey` | **poller** (merge) | `{mergeState}` (`ready` \| `conflict` \| `blocked`) |
+| `merge-ready` | `prKey` | **poller** (merge) | `{mergeState}` (`ready` \| `conflict` \| `blocked`); when `blocked`, also `{failingChecks, failingChecksList}` for the `senior:fix-ci` branch |
 | `merge-landed` | `prKey` | **poller** (merge) | — (queued PR merged, or merged out-of-band) |
 
 Note `escalation-answered` is reused by both processes (`convergence-loop` and
@@ -252,13 +253,24 @@ Everything else (`GET /`, `GET /app/pages/*`, `GET /app/data/*`, the renderer) i
 served by the runtime. `deno task purge` wipes and re-migrates the app db (used
 when the engine data is purged, to keep app state and engine state consistent).
 
-## 9. Prompt asset mechanism (agreed: option A)
+## 9. Prompt delivery — model-authored template headers
 
-`prompts/review-round.md` is the single source of truth for the agent's
-instructions. The **Register & load prompt** task reads it at instance start and
-sets `prompt` once; every round's agent job receives it via input mapping. A PR
-therefore keeps the prompt it started with for its whole run. (Future option:
-version the prompt with a hash so edits are auditable per PR.)
+Each agent task's base prompt lives **only** in its `prompts/*.md` side-car and is
+authored **into the model** as a deploy-time `{{stem}}` template. `nano.app.json`
+declares `models.templates: ["prompts/*.md"]`, and each agent service task carries a
+`io.nanobpm.agentTask.task.prompt = {{stem}}` task header (`{{review-round}}`,
+`{{plan}}`, `{{plan-review}}`, `{{feature}}`, `{{fix-ci}}`). At deploy the template
+substitutes the file content into the header, so the host no longer reads prompt
+assets or carries them as process variables.
+
+Per-instance dynamic context rides **`appendPrompt`**: an ioMapping sets a job-local
+`appendPrompt` string (a plan's rejection findings, a feature task's brief, the
+failing-check list) which the agent harness concatenates **verbatim** onto the header
+base — the model owns any separator, and a null/empty append leaves the base
+untouched. Base prompts can't be composed in FEEL (they are quote-heavy, and XML
+attribute escaping would corrupt a FEEL string literal), so composition happens via
+this append seam rather than inline in FEEL. Requires `@nanobpm/urban` with
+deploy-time template substitution.
 
 ## 10. Poller
 
@@ -286,11 +298,26 @@ Flow:
 start ─► wait: deps merged ─► arm merge ─► wait: mergeable ─┬─ ready ─► merge ─┬─ merged ─► mark merged ─► end
    (deps-cleared)              (waiting_merge)  (merge-ready)│                 ├─ queued ─► wait: landed ─► mark merged
                                                              │                 │            (merge-landed)
-                                                 conflict/blocked              └─ blocked ─► escalate ─┐
-                                                             ▼                                          │
-                                                          escalate ─► wait: answered ─► (re-arm) ◄──────┘
-                                                                      (escalation-answered)
+                                                             │                 └─ blocked ──────────────► escalate ─┐
+                                                             ├─ conflict ─────────────────────────────► escalate ─┤
+                                                             └─ blocked (failing checks) ─► auto-fix CI?           │
+                                                                     ├─ within budget ─► [senior:fix-ci] ─┐        │
+                                                                     └─ budget exhausted ─► escalate ─┐    │        │
+                                    (re-arm) ◄── fixed ─┬────────────────────────────────────────────│────┘        │
+                                                        └─ could not fix ─► escalate ─┐               │             │
+                                                                                      ▼               ▼             ▼
+                                                             wait: answered ─► (re-arm) ◄──────── (all escalations)
+                                                                   (escalation-answered)
 ```
+
+- **CI auto-fix** — a `blocked` verdict means a **required check failed**
+  (`classifyMergeability`). Rather than escalate immediately, the stage dispatches a
+  `senior:fix-ci` agent (base prompt via the `{{fix-ci}}` template header; the failing
+  check names ride `appendPrompt`) to green the checks on the branch, then re-arms the
+  poller. It repeats while `ciFixRound < ciFixMax`
+  (`NANO_PR_MAX_CI_FIX_ROUNDS`, default 3; `0` disables). Only when the budget is
+  exhausted, the agent reports `blocked`, or the branch is in `conflict` does it fall
+  through to the human escalation path.
 
 - **Dependencies** — `pr_dependencies(pr_key, depends_on_key)` (migration 004).
   Declared two ways: a `Depends-on: owner/repo#N` line in the PR body (parsed on
@@ -339,21 +366,24 @@ hand every produced PR to the convergence loop of §4.
 Start(issue) → plan → record-plan → implement (parallel MI) → record-results → End
 ```
 
-- **`plan`** — service task, job type `senior:plan`. Its `prompt` is
-  `prompts/plan.md` (carried as `planPrompt` and input-mapped to `prompt`). The
-  agent reads the issue via `gh` and emits `tasks: [{ id, title, prompt }]`.
+- **`plan`** — service task, job type `senior:plan`. Its base prompt is delivered
+  via the `{{plan}}` model template header (`prompts/plan.md`); when a prior review
+  rejected the plan, the rejection findings ride `appendPrompt` (an ioMapping over
+  `planFindings`) rather than being concatenated in FEEL. The agent reads the issue
+  via `gh` and emits `tasks: [{ id, title, prompt }]`.
 - **`record-plan`** — app worker `pr.record-plan`. Normalizes the tasks (assigns a
   stable `id`/index), writes one `plan_tasks` row each, sets `plans.task_count` and
   status `dispatched`, and **re-emits** the normalized `tasks` so the fan-out
   iterates the canonical list.
 - **`implement`** — service task, job type `senior:feature`, **parallel
   multi-instance** over `=tasks` (`inputElement="task"`,
-  `outputCollection="results"`). Each child's `prompt` is
-  `featurePrompt + "\n\n---\n\n" + task.prompt` — an input mapping evaluated **per
-  child** (Zeebe parity: the inner activity keeps its own `zeebe:ioMapping`, applied
-  on each inner-instance activation with `task`/`loopCounter` bound). Each agent
-  opens a PR and returns `{ status, summary, pr }`; `outputElement` collects those
-  into `results[i]`, index-aligned with `tasks[i]`.
+  `outputCollection="results"`). Its base prompt is delivered via the `{{feature}}`
+  model template header (`prompts/feature.md`); each child's per-task brief
+  (`"\n\n---\n\n" + task.prompt`) rides `appendPrompt` — an input mapping evaluated
+  **per child** (Zeebe parity: the inner activity keeps its own `zeebe:ioMapping`,
+  applied on each inner-instance activation with `task`/`loopCounter` bound). Each
+  agent opens a PR and returns `{ status, summary, pr }`; `outputElement` collects
+  those into `results[i]`, index-aligned with `tasks[i]`.
 - **`record-results`** — app worker `pr.record-results`. Zips `results` back onto
   `plan_tasks` by index, and for each opened `pr` calls the same idempotent
   `submitPr` as §4 — **the handoff**: every fleet-produced PR enrols into the
