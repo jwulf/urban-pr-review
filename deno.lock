@@ -1,6 +1,8 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@std/assert@1": "1.0.19",
+    "jsr:@std/internal@^1.0.12": "1.0.14",
     "npm:@nanobpm/urban@0.21": "0.21.0",
     "npm:@semantic-release/changelog@^6.0.3": "6.0.3_semantic-release@24.2.9__typescript@5.9.3_typescript@5.9.3",
     "npm:@semantic-release/git@^10.0.1": "10.0.1_semantic-release@24.2.9__typescript@5.9.3_typescript@5.9.3",
@@ -8,6 +10,17 @@
     "npm:@types/node@22": "22.20.1",
     "npm:semantic-release@^24.2.9": "24.2.9_typescript@5.9.3",
     "npm:typescript@^5.6.0": "5.9.3"
+  },
+  "jsr": {
+    "@std/assert@1.0.19": {
+      "integrity": "eaada96ee120cb980bc47e040f82814d786fe8162ecc53c91d8df60b8755991e",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    },
+    "@std/internal@1.0.14": {
+      "integrity": "291516b3d4c35024d6ffbc0a9df5bf4c64116e05b50012cf846710152d2ffdf7"
+    }
   },
   "npm": {
     "@actions/core@3.0.1": {
