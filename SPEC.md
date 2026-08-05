@@ -375,6 +375,43 @@ History: done/failed/abandoned) with a `plan_tasks` child grid showing each task
 status and the PR it produced (`pr_key` cross-references the Pull requests grid for
 convergence status).
 
+### 13.1 Dependency waves + merge barrier (issues #20, #26, release-notes-concierge)
+
+The flat `implement → record-results` shape above evolved into a **wave loop**. The
+planner may emit `dependsOn` edges; `record-plan` levelizes them into ordered
+**waves** (`app/waves.ts` `computeWaves`, `plan_tasks.wave` + `plan_task_deps`), and
+the loop runs one parallel `implement` MI fan-out per wave:
+
+```
+… → select-wave → implement (parallel MI) → record-wave → gw-more
+       ↑                                                     │ more
+       └───────────── wait-wave-merged ←────────────────────┘
+                                                             │ done
+                                                             ▼
+                                                       record-results
+```
+
+- **`select-wave`** (`pr.select-wave`) emits the current wave's still-`pending`
+  tasks as `waveTasks`; a task whose dependency ended `blocked`/`skipped` is marked
+  `skipped` (the failure cascades) rather than dispatched.
+- **`record-wave`** (`pr.record-wave`) records each slice's outcome, hands every
+  opened PR to the convergence loop via `submitPr` (declaring dependency PRs as
+  `dependsOn`), and advances `currentWave`.
+- **Wave-merge barrier** (`wait-wave-merged`): when a wave has a successor,
+  `record-wave` sets `plans.gate_wave` to that wave's index and the process parks at
+  the `wait-wave-merged` catch event. The poller's `pollWaveGates` pass publishes the
+  `wave-merged` message (correlated on `planKey`) once **every opened PR in that wave
+  has merged** (`app/waves.ts` `waveMergeTargets` selects the PRs to wait on;
+  `blocked`/`skipped`/keyless tasks clear vacuously), then clears `gate_wave`
+  single-shot. So a `dependsOn` means the dependent wave is not **implemented** until
+  its prerequisites have **landed on the base branch** — not merely opened. This lets
+  a blocking prerequisite (e.g. app scaffolding) fully converge and merge before the
+  next wave builds on it. `gate_wave` lives in `db/migrations/007_wave_gate.sql`.
+- **Adopting a decomposed epic** (`prompts/plan.md` Step 0): when adopting existing
+  sub-issues, the planner honours an explicit `Depends-on: #N` / `Blocked by #N`
+  directive in a sub-issue body, mapping each prerequisite `#M` to `issue-M` in the
+  adopted task's `dependsOn` — so a human-declared blocking order survives adoption.
+
 ## 14. Open questions / future
 
 - **Provisioning the existing PR branch** — resolved: the `c8ctl` host-git

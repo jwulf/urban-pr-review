@@ -13,7 +13,7 @@
 // Enrollment lives here (not in the finalizer) so a PR is enrolled the moment its wave lands —
 // and, crucially, so a later wave's `dependsOn` can reference the PR keys earlier waves produced.
 import type { AppJobHandler } from "@nanobpm/urban";
-import { type PlanTask, planTaskDeps, planTasks } from "../../app/plan.ts";
+import { type PlanTask, planTaskDeps, planTasks, plans } from "../../app/plan.ts";
 import { parsePr, submitPr } from "../../app/service.ts";
 
 interface Result {
@@ -119,7 +119,25 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
   }
 
   const nextWave = currentWave + 1;
-  return { currentWave: nextWave, hasMoreWaves: nextWave < waveCount };
+  const hasMoreWaves = nextWave < waveCount;
+
+  // Wave-merge barrier: when another wave follows, park the plan-fanout instance at the
+  // `wait-wave-merged` catch event until THIS wave's opened PRs have MERGED (not merely opened).
+  // `gate_wave` is that durable marker; the poller (`pollWaveGates`) clears it and publishes
+  // `wave-merged` once the wave has landed. Clear it on the final wave so a re-planned issue can't
+  // inherit a stale gate. Best-effort: a failed marker write must not fail the wave (the poller
+  // reconciles from `plan_tasks`/`pull_requests`), but the loop still relies on it to know which
+  // wave to watch, so we log a failure loudly.
+  try {
+    await plans(app.data).update(planKey, {
+      gate_wave: hasMoreWaves ? currentWave : null,
+      updated_at: ts,
+    });
+  } catch (err) {
+    app.log("error", `record-wave: arming wave gate failed for ${planKey}`, { err: String(err) });
+  }
+
+  return { currentWave: nextWave, hasMoreWaves };
 };
 
 export default handler;

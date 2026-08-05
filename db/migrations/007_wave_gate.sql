@@ -1,0 +1,16 @@
+-- Wave-merge barrier (release-notes-concierge epic): a later wave must not be
+-- IMPLEMENTED until the prior wave's PRs have MERGED — not merely opened.
+--
+-- Before this, `record-wave` handed off a wave's PRs to convergence/merge and the
+-- plan-fanout loop went straight back to `select-wave`, dispatching the next wave's
+-- agents off an UNMERGED base. The `pr_dependencies` DAG only ordered the eventual
+-- *merges*; it never held back a dependent wave's *implementation*. For a blocking
+-- prerequisite (e.g. app scaffolding that every later task builds on) the next wave
+-- must see the merged prerequisite on `main`.
+--
+-- `plans.gate_wave` is the durable marker for the barrier: when `record-wave` hands
+-- off a wave that has a successor, it records that wave's index here and the process
+-- parks at the `wait-wave-merged` catch event. The poller (`pollWaveGates`) clears it
+-- and publishes `wave-merged` once every opened PR in that wave has merged. NULL means
+-- the plan is not currently parked at the wave barrier.
+ALTER TABLE plans ADD COLUMN gate_wave INTEGER;
