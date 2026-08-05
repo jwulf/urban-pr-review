@@ -279,7 +279,7 @@ with `openDomain("app")`.
 | `NANO_PR_GITHUB_TRANSPORT` | `auto` | how the poller reads GitHub reviews: `gh` (host `gh` CLI — reaches every repo you can, no PAT needed), `token` (`GITHUB_TOKEN` over HTTP), or `auto` (prefer `gh`, else token) |
 | `GITHUB_TOKEN` | — | token for the `token`/`auto` transport (idle if no transport is usable) |
 | `NANO_PR_POLL_MS` | `60000` | review-ready poll interval |
-| `NANO_PR_MAX_ROUNDS` | `10` | escalate after N rounds |
+| `NANO_PR_MAX_ROUNDS` | `20` | default cap: escalate after N rounds (per-submit override via the form / webhook `maxRounds`; clamped to 1–100) |
 | `NANO_PR_WEBHOOK_SECRET` | — | shared secret for `POST /hooks/submit` (`X-Hook-Secret`) |
 | `NANO_PR_AUTO_MERGE` | `1` | after convergence, run the merge stage; `0` = stop at `converged` (review-only) |
 | `NANO_PR_MERGE_METHOD` | `squash` | merge method: `squash`, `merge`, or `rebase` |
