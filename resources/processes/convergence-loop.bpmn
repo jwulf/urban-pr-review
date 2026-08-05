@@ -23,7 +23,6 @@
           <nano:extend name="prUrl" type="string" />
           <nano:extend name="repo" type="string" />
           <nano:extend name="prNumber" type="integer" />
-          <nano:extend name="prompt" type="string" />
           <nano:extend name="round" type="integer" />
           <nano:extend name="answer" type="string" optional="true" />
         </nano:shape>
@@ -73,6 +72,13 @@
     <bpmn:serviceTask id="review-round" name="Review round (agent)">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="senior:pr-review" />
+        <zeebe:taskHeaders>
+          <!-- Agent prompt authored in the model as a deploy-time template: the
+               `{{review-round}}` token is substituted with prompts/review-round.md at deploy
+               (see models.templates in nano.app.json). Delivered via the reserved agent-task
+               header namespace; the harness reads it as task.prompt. -->
+          <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{review-round}}" />
+        </zeebe:taskHeaders>
         <zeebe:properties>
           <zeebe:property name="io.nanobpm.dataEnvelope.in" value="PrReviewRoundIn" />
           <zeebe:property name="io.nanobpm.dataEnvelope.out" value="PrReviewRoundOut" />

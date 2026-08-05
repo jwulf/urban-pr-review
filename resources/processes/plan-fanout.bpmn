@@ -17,8 +17,12 @@
     <bpmn:serviceTask id="plan" name="Plan (agent)">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="senior:plan" />
+        <zeebe:taskHeaders>
+          <!-- Base prompt via deploy-time template (prompts/plan.md → {{plan}}). -->
+          <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{plan}}" />
+        </zeebe:taskHeaders>
         <zeebe:ioMapping>
-          <zeebe:input source="=planPrompt + (if (planFindings = null or planFindings = &#34;&#34;) then &#34;&#34; else &#34;&#10;&#10;---&#10;&#10;A prior review REJECTED your last plan. Address every point, then re-emit the full plan:&#10;&#10;&#34; + planFindings)" target="prompt" />
+          <zeebe:input source="=(if (planFindings = null or planFindings = &#34;&#34;) then &#34;&#34; else &#34;&#10;&#10;---&#10;&#10;A prior review REJECTED your last plan. Address every point, then re-emit the full plan:&#10;&#10;&#34; + planFindings)" target="appendPrompt" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
       <bpmn:incoming>f_toPlan</bpmn:incoming>
@@ -35,9 +39,11 @@
     <bpmn:serviceTask id="review-plan" name="Review plan (agent)">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="senior:plan-review" />
-        <zeebe:ioMapping>
-          <zeebe:input source="=planReviewPrompt" target="prompt" />
-        </zeebe:ioMapping>
+        <zeebe:taskHeaders>
+          <!-- Base prompt via deploy-time template (prompts/plan-review.md → {{plan-review}}).
+               No dynamic suffix: the reviewer reads the recorded plan from the repo. -->
+          <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{plan-review}}" />
+        </zeebe:taskHeaders>
       </bpmn:extensionElements>
       <bpmn:incoming>f_toReviewPlan</bpmn:incoming>
       <bpmn:outgoing>f_toRecordPlanReview</bpmn:outgoing>
@@ -85,8 +91,13 @@
       <bpmn:serviceTask id="implement-task" name="Implement (agent)">
         <bpmn:extensionElements>
           <zeebe:taskDefinition type="senior:feature" />
+          <zeebe:taskHeaders>
+            <!-- Base prompt via deploy-time template (prompts/feature.md → {{feature}}). The
+                 per-task brief is appended verbatim via appendPrompt below. -->
+            <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{feature}}" />
+          </zeebe:taskHeaders>
           <zeebe:ioMapping>
-            <zeebe:input source="=featurePrompt + &#34;&#10;&#10;---&#10;&#10;&#34; + task.prompt" target="prompt" />
+            <zeebe:input source="=&#34;&#10;&#10;---&#10;&#10;&#34; + task.prompt" target="appendPrompt" />
           </zeebe:ioMapping>
         </bpmn:extensionElements>
         <bpmn:incoming>w_toImpl</bpmn:incoming>

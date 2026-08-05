@@ -21,3 +21,28 @@ export function clampRounds(value: unknown, fallback: number): number {
   if (i < 1) return safeFallback;
   return Math.min(i, MAX_ROUNDS_CEILING);
 }
+
+/** Ceiling on CI-fix attempts, mirroring MAX_ROUNDS_CEILING — an unbounded budget could dispatch
+ * the `senior:fix-ci` agent (and its cost) indefinitely against a stubbornly-red PR. */
+export const MAX_CI_FIX_CEILING = 20;
+
+/** Coerce the operator-supplied CI-fix budget (env `NANO_PR_MAX_CI_FIX_ROUNDS`) into a sane
+ * non-negative integer. Unlike {@link clampRounds} this ALLOWS 0 — a budget of 0 disables
+ * auto-fix so a blocked PR escalates to a human immediately. Absent / blank / non-numeric /
+ * negative / NaN fall back to `fallback`; values above the ceiling are clamped down (and so is an
+ * oversized `fallback`, so it can never bypass the ceiling). */
+export function clampCiFixBudget(value: unknown, fallback: number): number {
+  const safeFallback = Number.isFinite(fallback)
+    ? Math.min(Math.max(Math.trunc(fallback), 0), MAX_CI_FIX_CEILING)
+    : 0;
+  // Blank / absent → fallback. This guard is essential BEFORE coercion: Number("") is 0, so a
+  // blank env var must not be mistaken for an explicit 0 (which legitimately disables auto-fix).
+  if (value === null || value === undefined) return safeFallback;
+  const trimmed = typeof value === "number" ? value : String(value).trim();
+  if (trimmed === "") return safeFallback;
+  const n = typeof trimmed === "number" ? trimmed : Number(trimmed);
+  if (!Number.isFinite(n)) return safeFallback;
+  const i = Math.trunc(n);
+  if (i < 0) return safeFallback;
+  return Math.min(i, MAX_CI_FIX_CEILING);
+}

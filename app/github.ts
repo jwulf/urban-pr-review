@@ -130,11 +130,13 @@ export async function fetchPrMeta(
 /** A PR's merge state, narrowed to what the merge poller needs to classify landability.
  * `mergeStateStatus` uses GitHub's vocabulary (CLEAN | BLOCKED | BEHIND | DIRTY | UNSTABLE |
  * DRAFT | HAS_HOOKS | UNKNOWN). `failingChecks` is `-1` when the transport can't enumerate
- * checks (token mode) so the classifier stays conservative. */
+ * checks (token mode) so the classifier stays conservative. `failingCheckNames` lists those
+ * failing gates (empty in token mode) so the CI-fix agent knows what to make green. */
 export interface PrState {
   merged: boolean;
   mergeStateStatus: string;
   failingChecks: number;
+  failingCheckNames: string[];
 }
 
 /** Map GitHub's REST `mergeable_state` (lower-case) onto the GraphQL `mergeStateStatus`
@@ -147,17 +149,22 @@ interface RollupEntry {
   status?: string;
   conclusion?: string;
   state?: string;
+  name?: string;
+  context?: string;
+  workflowName?: string;
 }
-/** Count checks whose result is a hard failure (as opposed to pending/success). Covers both the
- * CheckRun shape (`conclusion`) and the legacy StatusContext shape (`state`). */
-function countFailing(rollup: RollupEntry[]): number {
+/** Names of the checks whose result is a hard failure (as opposed to pending/success). Covers
+ * both the CheckRun shape (`conclusion` + `name`/`workflowName`) and the legacy StatusContext
+ * shape (`state` + `context`). The names are what the CI-fix agent is handed so it knows which
+ * gates to make green; `failingChecks` (the count) is derived from this list. */
+function failingCheckNames(rollup: RollupEntry[]): string[] {
   const bad = new Set(["FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED", "STARTUP_FAILURE", "ERROR"]);
-  let n = 0;
+  const names: string[] = [];
   for (const c of rollup) {
     const v = (c.conclusion || c.state || "").toUpperCase();
-    if (bad.has(v)) n++;
+    if (bad.has(v)) names.push(c.name || c.context || c.workflowName || "check");
   }
-  return n;
+  return names;
 }
 
 export async function fetchPrState(
@@ -181,10 +188,13 @@ export async function fetchPrState(
       mergeStateStatus?: string;
       statusCheckRollup?: RollupEntry[];
     };
+    const rollup = j.statusCheckRollup ?? [];
+    const names = failingCheckNames(rollup);
     return {
       merged: j.state === "MERGED" || !!j.mergedAt,
       mergeStateStatus: (j.mergeStateStatus || "UNKNOWN").toUpperCase(),
-      failingChecks: countFailing(j.statusCheckRollup ?? []),
+      failingChecks: names.length,
+      failingCheckNames: names,
     };
   }
   if (!token) return null;
@@ -199,6 +209,7 @@ export async function fetchPrState(
     merged: !!j.merged || !!j.merged_at,
     mergeStateStatus: normalizeMergeState(j.mergeable_state ?? "unknown"),
     failingChecks: -1, // REST here doesn't enumerate checks → classifier treats BLOCKED as "wait"
+    failingCheckNames: [], // …and the CI-fix agent gets no per-check list in token mode
   };
 }
 

@@ -185,10 +185,14 @@ it for you:
                                                         │
    wait: deps merged ──► arm ──► wait: mergeable ──┬─ ready ─► merge ──┬─ merged ─► mark merged ─► done
    (Depends-on PRs)                                │                   ├─ queued ─► wait: landed ─► mark merged
-                                                   └─ conflict/blocked │
-                                                        ▼              └─ blocked ─► escalate ─► wait: answered ┐
-                                                     escalate ─► wait: answered ───────────────────────────────┘
-                                                                          (re-arm and retry)
+                                                   ├─ conflict ────────│──────────────► escalate ─┐
+                                                   └─ blocked (checks) ─► fix-ci? ──┐   │           │
+                                                        ▲    within budget ─► [senior:fix-ci] ─┐    │
+                                                        │    budget spent ─► escalate ─┐       │    │
+                                                        └── fixed (re-arm) ◄───────────│───────┘    │
+                                                                                       ▼            ▼
+                                                            wait: answered ◄────── (all escalations)
+                                                                 (re-arm and retry)
 ```
 
 - **Dependencies** — a PR can declare `Depends-on: owner/repo#N` (in the PR body
@@ -197,10 +201,16 @@ it for you:
 - **Strategy is auto-detected** — `pr.merge` attempts the merge; if the branch
   requires a **merge queue**, GitHub enqueues it and the process waits for
   `merge-landed`; otherwise it's a straight squash/merge/rebase.
-- **Blocks escalate** — a conflict or a failing required gate raises the same
-  escalation machinery as the review stage; answer it in the UI and the process
-  re-arms and retries. Set `NANO_PR_AUTO_MERGE=0` to stop at `converged`
-  (review-only mode).
+- **Failing CI auto-fixes first, then escalates** — a `blocked` verdict means a
+  **required check failed**. Before escalating, the stage dispatches a
+  `senior:fix-ci` agent (its base prompt arrives via the `{{fix-ci}}` model
+  template header; the failing check names ride the harness `appendPrompt`) to
+  green the branch, then re-arms the poller. It retries while
+  `ciFixRound < ciFixMax` (`NANO_PR_MAX_CI_FIX_ROUNDS`, default 3; `0` disables).
+  A **conflict**, an exhausted budget, or an agent that reports it can't fix the
+  build falls through to the same escalation machinery as the review stage; answer
+  it in the UI and the process re-arms and retries. Set `NANO_PR_AUTO_MERGE=0` to
+  stop at `converged` (review-only mode).
 
 ## Fleet mode: hand it an issue (plan → implement → converge)
 
@@ -245,7 +255,7 @@ external `c8ctl nano work` workers, matched by rank×capability.
 | `db/migrations/001_init.sql` | `pull_requests` / `rounds` / `escalations` |
 | `db/migrations/004_merge.sql` | `merged_at` column + `pr_dependencies` / `merges` |
 | `workers/*/worker.ts` | app-hosted record workers |
-| `prompts/review-round.md` | the agent's instructions (carried in the job payload) |
+| `prompts/review-round.md` | the agent's base instructions (delivered via the `{{review-round}}` model template header) |
 | `components/review-round.json` | Zeebe element template for the agent task |
 | `pages/home.page.json` | the screen, authored declaratively (ADR 0042 Page Composer) |
 
@@ -284,6 +294,7 @@ with `openDomain("app")`.
 | `NANO_PR_AUTO_MERGE` | `1` | after convergence, run the merge stage; `0` = stop at `converged` (review-only) |
 | `NANO_PR_MERGE_METHOD` | `squash` | merge method: `squash`, `merge`, or `rebase` |
 | `NANO_PR_MERGE_ADMIN` | `0` | pass `--admin` to override failing non-required checks (use with care) |
+| `NANO_PR_MAX_CI_FIX_ROUNDS` | `3` | max `senior:fix-ci` attempts to green a `blocked` PR's failing checks before escalating; `0` disables (escalate immediately), clamped to 0–20 |
 
 ## Run
 
@@ -360,5 +371,14 @@ npm run compile   # → dist/urban-pr-review  (via `deno compile`)
 The `senior:pr-review` task is serviced by an external worker — it is **not** in
 the manifest `workers[]`. Point a `c8ctl nano work` daemon (or any Zeebe-style
 worker) at task type `senior:pr-review`; each job carries `{prUrl, repo, prNumber,
-round, answer?, prompt}` and expects `{status, summary, question?}` back. The
-`prompt` is the full text of `prompts/review-round.md`.
+round, answer?}` and expects `{status, summary, question?}` back. The agent's base
+prompt is **not** in the job payload — it is delivered via the `{{review-round}}`
+model **template header** (`prompts/review-round.md`), substituted at deploy time
+(`models.templates` in `nano.app.json`); per-instance context (e.g. a human's
+escalation answer) is appended verbatim by the harness `appendPrompt` seam.
+
+The fleet and merge stages add three more external task types, each with its own
+base prompt delivered the same way: **`senior:plan`** (`{{plan}}`),
+**`senior:feature`** (`{{feature}}`), and **`senior:fix-ci`** (`{{fix-ci}}` — greens
+a `blocked` PR's failing checks). Hire/point workers at them with the same
+`c8ctl nano hire`/`work` flow, matched by rank×capability.

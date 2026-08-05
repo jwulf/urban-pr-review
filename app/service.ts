@@ -29,9 +29,15 @@ const REVIEW_JOB_TYPE = "senior:pr-review";
 /** Default round cap before the loop escalates to a human. A per-submit override (submit form /
  * webhook / start action) takes precedence; this env var sets the fleet-wide default. The cap
  * coercion + ceiling live in the pure `./rounds.ts` module (re-exported for callers). */
-export { clampRounds, MAX_ROUNDS_CEILING } from "./rounds.ts";
-import { clampRounds } from "./rounds.ts";
+export { clampCiFixBudget, clampRounds, MAX_CI_FIX_CEILING, MAX_ROUNDS_CEILING } from "./rounds.ts";
+import { clampCiFixBudget, clampRounds } from "./rounds.ts";
 export const MAX_ROUNDS = clampRounds(process.env.NANO_PR_MAX_ROUNDS, 20);
+
+/** How many times the merge stage will dispatch a `senior:fix-ci` agent to make a blocked PR's
+ * failing required checks green before giving up and escalating to a human. Default 3; set
+ * `NANO_PR_MAX_CI_FIX_ROUNDS=0` to disable auto-fix (a blocked PR escalates immediately). Unlike
+ * the review-round cap this allows 0 (disable), so it parses directly rather than via clampRounds. */
+export const MAX_CI_FIX_ROUNDS = clampCiFixBudget(process.env.NANO_PR_MAX_CI_FIX_ROUNDS, 3);
 
 /** Whether a converged PR is automatically driven to merge (the merge-loop). Default on; set
  * `NANO_PR_AUTO_MERGE=0` to stop at `converged` (review-only mode). */
@@ -49,20 +55,10 @@ export const MERGE_ADMIN = ["1", "true", "on", "yes"].includes(
   (process.env.NANO_PR_MERGE_ADMIN ?? "0").trim().toLowerCase(),
 );
 
-// The prompt asset is read once at module load and carried on each new instance (SPEC §9),
-// so a PR keeps the instructions it started with for its whole run. Host-agnostic: reads via
-// Deno inside a compiled binary, else via node:fs under Node.
-const REVIEW_PROMPT = await (async () => {
-  const path = "prompts/review-round.md";
-  try {
-    const g = globalThis as { Deno?: { readTextFile(p: string): Promise<string> } };
-    return g.Deno?.readTextFile
-      ? await g.Deno.readTextFile(path)
-      : await (await import("node:fs/promises")).readFile(path, "utf8");
-  } catch {
-    return "";
-  }
-})();
+// The `senior:pr-review` agent prompt is no longer read by the host: it is authored in the
+// model as a `{{review-round}}` deploy-time template (see `models.templates` in nano.app.json)
+// substituted into the task's `io.nanobpm.agentTask.task.prompt` header. The host only carries
+// runtime PR identity + the round counter now.
 
 const now = () => new Date().toISOString();
 
@@ -245,7 +241,6 @@ export async function submitPr(
       prKey: parsed.prKey,
       round: 1,
       maxRounds: clampRounds(maxRounds, MAX_ROUNDS),
-      prompt: REVIEW_PROMPT,
     },
   });
   if (processInstanceKey != null) {
@@ -270,6 +265,8 @@ export async function startMerge(
       prUrl: pr.url,
       prKey: pr.prKey,
       round: pr.round,
+      ciFixRound: 0,
+      ciFixMax: MAX_CI_FIX_ROUNDS,
     },
   });
   if (processInstanceKey != null) {
@@ -518,7 +515,14 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
       await flipToMergingThenPublish(data, engine, prKey, "waiting_merge", {
         name: "merge-ready",
         correlationKey: prKey,
-        variables: { mergeState: verdict },
+        variables: {
+          mergeState: verdict,
+          // Carried for the senior:fix-ci branch (verdict "blocked" = a failed required check).
+          // Joined to a scalar so it rides the message payload without a list projection; the
+          // fix-ci task appends it to the agent prompt so the agent knows which gates to green.
+          failingChecks: st.failingChecks,
+          failingChecksList: st.failingCheckNames.join("\n"),
+        },
       });
       console.log(`[poller] mergeable=${verdict} (${st.mergeStateStatus}) -> ${prKey}`);
     } catch (err) {
