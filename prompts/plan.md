@@ -60,9 +60,16 @@ For every distinct child issue number `N` you find:
     PR against this specific sub-issue and include `Closes #N` in the PR body so
     the sub-issue is linked and auto-closed on merge.
 
-If you found one or more open sub-issues this way, emit **exactly** those tasks
-and stop — **do not add, merge, or re-split them**. Only fall through to Step 1
-if the issue has **no** sub-issues at all.
+Once you have checked every child, decide based on what you found — these three
+cases are exhaustive, so do **not** fall through to Step 1 unless the third applies:
+
+- **One or more open sub-issues:** emit **exactly** those tasks and stop —
+  **do not add, merge, or re-split them**.
+- **Sub-issues exist but every one is closed:** the epic is already fully
+  delivered, so emit `{ "tasks": [] }` (with a `note` saying all sub-issues are
+  closed) and stop. Do **not** fall through to Step 1 and re-decompose it.
+- **No sub-issues at all:** fall through to Step 1 and decompose the issue
+  yourself.
 
 ## Step 1 — decompose (only when there are no sub-issues)
 
