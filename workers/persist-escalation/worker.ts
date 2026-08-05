@@ -41,7 +41,19 @@ const handler: AppJobHandler<In> = async (job, app) => {
   // concrete, non-blank value. `summary` is left undefined so the write boundary
   // omits it and the nullable column stays NULL.
   const status = nonBlank(job.variables.status) ?? "needs_input";
-  const question = nonBlank(job.variables.question) ?? "(no question provided)";
+  // A blank question must never open an escalation: it would surface a non-actionable
+  // "(no question provided)" placeholder in the answer form (the empty escalations on
+  // Magikcraft/nano-bpm #597/#599). Every legitimate arm sets a concrete question — the agent
+  // contract requires one for needs_input/blocked, and the max-rounds + review-timeout arms set a
+  // literal via the model. A blank here means a prompt-less / no-result round fell through the
+  // `gw-status` default; fail loudly (mirroring the sibling `persist-task-escalation`) so it
+  // surfaces as an incident rather than parking an unanswerable escalation.
+  const question = nonBlank(job.variables.question);
+  if (!question) {
+    throw new Error(
+      "persist-escalation: missing question — refusing to open an unanswerable escalation (round returned no actionable status)",
+    );
+  }
   const kind = status === "needs_input" ? "question" : "blocker";
   const now = new Date().toISOString();
   const transcript = transcriptOf(job.variables);
