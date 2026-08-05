@@ -30,9 +30,12 @@ Detect existing children two ways (try both; union the results, de-duplicated):
 1. **Native GitHub sub-issues:**
 
    ```bash
-   gh api "repos/<owner>/<repo>/issues/<number>/sub_issues" \
+   gh api --paginate "repos/<owner>/<repo>/issues/<number>/sub_issues" \
      --jq '.[] | {number, title, state}'
    ```
+
+   (`--paginate` matters: epics with more than one page of children — 30+
+   sub-issues — are otherwise only partially adopted, silently dropping tasks.)
 
    (Ignore an error / empty list — the repo or issue may not use native
    sub-issues.)
@@ -45,9 +48,11 @@ Detect existing children two ways (try both; union the results, de-duplicated):
 
 For every distinct child issue number `N` you find:
 
+- Read it with `gh issue view <owner>/<repo>#N` to get its title, body, and
+  current **state** (task-list `#N` references carry no state until you fetch
+  them; the native `sub_issues` query above already returns `state`).
 - Skip it if it is already **closed** (that slice is done).
-- Read it with `gh issue view <owner>/<repo>#N` to get its title and body.
-- Emit **one task** for it (see the output contract), with:
+- Otherwise, emit **one task** for it (see the output contract), with:
   - `id` = `issue-N`,
   - `title` = the sub-issue's title,
   - `prompt` = a self-contained brief built from the sub-issue's body, and end
