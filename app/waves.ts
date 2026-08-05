@@ -85,3 +85,32 @@ export function computeWaves(tasks: readonly WaveTask[]): WaveResult {
 
   return { waveOf, waves, waveCount };
 }
+
+/** A `plan_tasks` row as seen by the wave-merge barrier: its levelized wave, its dispatch
+ * status, and the PR it produced (if any). Structurally a subset of `PlanTask` (app/plan.ts). */
+export interface WaveGateTask {
+  wave: number | null;
+  status: string;
+  pr_key: string | null;
+}
+
+/** The PR keys that must MERGE for `gateWave` to clear the wave-merge barrier: the PRs opened by
+ * that wave's tasks. Only `opened` tasks produced a PR to wait on — `blocked`/`skipped` tasks can
+ * never merge and must not wedge the barrier (their failure already cascaded to dependents in
+ * `select-wave`), and an `opened` task with no `pr_key` is treated as having nothing to wait on.
+ *
+ * Pure and side-effect free (like {@link computeWaves}) so the poller's gate decision is a
+ * red/green regression target: the poller releases the next wave iff every key returned here has
+ * merged. An empty result means the wave clears vacuously (nothing to merge). */
+export function waveMergeTargets(
+  tasks: readonly WaveGateTask[],
+  gateWave: number,
+): string[] {
+  const keys: string[] = [];
+  for (const t of tasks) {
+    if (t.wave !== gateWave) continue;
+    if (t.status !== "opened" || !t.pr_key) continue;
+    keys.push(t.pr_key);
+  }
+  return keys;
+}

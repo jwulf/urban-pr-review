@@ -5,6 +5,11 @@
       <zeebe:subscription correlationKey="=planKey + &#34;:&#34; + task.id" />
     </bpmn:extensionElements>
   </bpmn:message>
+  <bpmn:message id="Message_waveMerged" name="wave-merged">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=planKey" />
+    </bpmn:extensionElements>
+  </bpmn:message>
   <bpmn:process id="plan-fanout" name="Agent Fleet — plan &#38; implement" isExecutable="true">
     <bpmn:startEvent id="Start" name="Issue submitted">
       <bpmn:outgoing>f_toPlan</bpmn:outgoing>
@@ -54,7 +59,7 @@
         <zeebe:taskDefinition type="pr.select-wave" />
       </bpmn:extensionElements>
       <bpmn:incoming>f_plan_proceed</bpmn:incoming>
-      <bpmn:incoming>f_moreWaves</bpmn:incoming>
+      <bpmn:incoming>f_waveMerged</bpmn:incoming>
       <bpmn:outgoing>f_toImplement</bpmn:outgoing>
     </bpmn:serviceTask>
     <bpmn:subProcess id="implement" name="Implement task (agent)">
@@ -129,6 +134,11 @@
       <bpmn:outgoing>f_moreWaves</bpmn:outgoing>
       <bpmn:outgoing>f_done</bpmn:outgoing>
     </bpmn:exclusiveGateway>
+    <bpmn:intermediateCatchEvent id="wait-wave-merged" name="Wait: wave merged">
+      <bpmn:incoming>f_moreWaves</bpmn:incoming>
+      <bpmn:outgoing>f_waveMerged</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="med_waveMerged" messageRef="Message_waveMerged" />
+    </bpmn:intermediateCatchEvent>
     <bpmn:serviceTask id="record-results" name="Finalize plan">
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="pr.record-results" />
@@ -151,9 +161,10 @@
     <bpmn:sequenceFlow id="f_toImplement" sourceRef="select-wave" targetRef="implement" />
     <bpmn:sequenceFlow id="f_toRecordWave" sourceRef="implement" targetRef="record-wave" />
     <bpmn:sequenceFlow id="f_toMore" sourceRef="record-wave" targetRef="gw-more" />
-    <bpmn:sequenceFlow id="f_moreWaves" name="more" sourceRef="gw-more" targetRef="select-wave">
+    <bpmn:sequenceFlow id="f_moreWaves" name="more" sourceRef="gw-more" targetRef="wait-wave-merged">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=hasMoreWaves</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_waveMerged" sourceRef="wait-wave-merged" targetRef="select-wave" />
     <bpmn:sequenceFlow id="f_done" name="done" sourceRef="gw-more" targetRef="record-results" />
     <bpmn:sequenceFlow id="f_toEnd" sourceRef="record-results" targetRef="End" />
   </bpmn:process>
@@ -196,6 +207,12 @@
         <dc:Bounds x="2468" y="215" width="50" height="50" />
         <bpmndi:BPMNLabel>
           <dc:Bounds x="2451" y="196" width="84" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_wait-wave-merged" bpmnElement="wait-wave-merged">
+        <dc:Bounds x="2650" y="382" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2629" y="349" width="78" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_record-results" bpmnElement="record-results">
@@ -257,6 +274,14 @@
         <di:waypoint x="2718" y="240" />
         <di:waypoint x="2818" y="240" />
       </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_moreWaves" bpmnElement="f_moreWaves">
+        <di:waypoint x="2493" y="265" />
+        <di:waypoint x="2493" y="400" />
+        <di:waypoint x="2650" y="400" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="2498" y="326" width="35" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_f_plan_revise" bpmnElement="f_plan_revise">
         <di:waypoint x="1041" y="215" />
         <di:waypoint x="1041" y="180" />
@@ -266,14 +291,11 @@
           <dc:Bounds x="631" y="158" width="46" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="BPMNEdge_f_moreWaves" bpmnElement="f_moreWaves">
-        <di:waypoint x="2493" y="265" />
-        <di:waypoint x="2493" y="420" />
-        <di:waypoint x="1216" y="420" />
+      <bpmndi:BPMNEdge id="BPMNEdge_f_waveMerged" bpmnElement="f_waveMerged">
+        <di:waypoint x="2668" y="418" />
+        <di:waypoint x="2668" y="438" />
+        <di:waypoint x="1216" y="438" />
         <di:waypoint x="1216" y="280" />
-        <bpmndi:BPMNLabel>
-          <dc:Bounds x="1837" y="428" width="35" height="14" />
-        </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNShape id="BPMNShape_w_start" bpmnElement="w_start">
         <dc:Bounds x="1406" y="142" width="36" height="36" />

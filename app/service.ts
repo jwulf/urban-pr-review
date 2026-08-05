@@ -15,6 +15,8 @@ import {
   fetchPrState,
   type MergeMethod,
 } from "./github.ts";
+import { planTasks, plans } from "./plan.ts";
+import { waveMergeTargets } from "./waves.ts";
 
 /** The BPMN process that drives review convergence (`resources/processes/convergence-loop.bpmn`). */
 export const PROCESS_ID = "convergence-loop";
@@ -640,6 +642,49 @@ async function pollJobActivation(
   }
 }
 
+/** Wave-merge barrier poll pass. After `record-wave` hands off a wave that has a successor, the
+ * plan-fanout instance parks at the `wait-wave-merged` catch event and `plans.gate_wave` records
+ * that wave's index. Here we check whether every OPENED PR in that wave has MERGED and, if so,
+ * publish `wave-merged` (correlated on the plan key) to release the next wave's implementation.
+ *
+ * `gate_wave` is cleared single-shot BEFORE publishing (and restored if the publish fails —
+ * mirroring `flipToMergingThenPublish`) so a slow pass can't double-signal and a later wave's
+ * barrier can't be tripped by a stale message reusing the same plan-key correlation. A wave whose
+ * tasks all ended `blocked`/`skipped` (no opened PR to wait on) clears vacuously — there is
+ * nothing to merge, and that failure has already cascaded to dependents in `select-wave`. */
+async function pollWaveGates(data: DataLayer, engine: EngineClient, token: string) {
+  for (const plan of await plans(data).all()) {
+    const gateWave = plan.gate_wave;
+    if (gateWave == null) continue;
+    const planKey = plan.plan_key;
+    try {
+      let allMerged = true;
+      const tasks = await planTasks(data).find({ plan_key: planKey });
+      for (const prKey of waveMergeTargets(tasks, gateWave)) {
+        if (!(await isDepMerged(data, prKey, token))) {
+          allMerged = false;
+          break;
+        }
+      }
+      if (!allMerged) continue;
+      await plans(data).update(planKey, { gate_wave: null, updated_at: now() });
+      try {
+        await engine.publishMessage({ name: "wave-merged", correlationKey: planKey, variables: {} });
+      } catch (err) {
+        try {
+          await plans(data).update(planKey, { gate_wave: gateWave, updated_at: now() });
+        } catch (revertErr) {
+          console.error(`[poller] revert wave-gate ${planKey} -> ${gateWave} failed: ${revertErr}`);
+        }
+        throw err;
+      }
+      console.log(`[poller] wave ${gateWave} merged -> ${planKey}`);
+    } catch (err) {
+      console.error(`[poller] wave-gate ${planKey}: ${err}`);
+    }
+  }
+}
+
 /** One full poll pass: advance the review stage, the merge stage, and (when the engine REST
  * endpoint is supplied) the job-activation visibility pass. Called on the self-scheduling loop
  * in `main.ts`. */
@@ -651,6 +696,7 @@ export async function pollOnce(
 ) {
   await pollReviews(data, engine, token);
   await pollMerges(data, engine, token);
+  await pollWaveGates(data, engine, token);
   if (engineRest) await pollJobActivation(data, engineRest.restAddress, engineRest.token);
 }
 

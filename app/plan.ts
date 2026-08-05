@@ -51,6 +51,9 @@ export interface Plan {
   open_task_question: string | null;
   open_task_corr_key: string | null;
   open_task_id: string | null;
+  // Wave-merge barrier (007_wave_gate.sql): the wave index whose PRs the plan is currently
+  // waiting to see MERGED before dispatching the next wave, or null when not parked at the barrier.
+  gate_wave: number | null;
   created_at: string;
   updated_at: string;
 }
