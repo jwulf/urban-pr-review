@@ -583,7 +583,19 @@ async function pollJobActivation(
       }
       continue;
     }
-    if (!pr.process_key) continue;
+    // A `converging` PR without a `process_key` has no engine instance to query (creation
+    // failed or is mid-transition), so clear any stale activation lease before skipping —
+    // otherwise the grid could show a phantom "agent working".
+    if (!pr.process_key) {
+      if (pr.active_worker || pr.lease_until) {
+        await prs(data).update(pr.pr_key, {
+          active_worker: null,
+          lease_until: null,
+          updated_at: now(),
+        });
+      }
+      continue;
+    }
 
     let worker: string | null = null;
     let leaseUntil: string | null = null;
