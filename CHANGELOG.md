@@ -1,3 +1,10 @@
+# [0.12.0](https://github.com/jwulf/urban-pr-review/compare/v0.11.0...v0.12.0) (2026-08-05)
+
+
+### Features
+
+* harden review-wait against permanent stalls ([#32](https://github.com/jwulf/urban-pr-review/issues/32)) ([8303357](https://github.com/jwulf/urban-pr-review/commit/83033579a382e7d235dc8f248c821150a29ea121))
+
 # [0.11.0](https://github.com/jwulf/urban-pr-review/compare/v0.10.0...v0.11.0) (2026-08-05)
 
 
