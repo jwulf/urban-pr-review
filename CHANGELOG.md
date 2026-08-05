@@ -1,3 +1,10 @@
+## [0.12.1](https://github.com/jwulf/urban-pr-review/compare/v0.12.0...v0.12.1) (2026-08-05)
+
+
+### Bug Fixes
+
+* adopt @nanobpm/urban 0.21.0 (grid row-detail collapse) + add Renovate ([#33](https://github.com/jwulf/urban-pr-review/issues/33)) ([7d75b46](https://github.com/jwulf/urban-pr-review/commit/7d75b46c443e75477aab78ee576ef94c02d182ce))
+
 # [0.12.0](https://github.com/jwulf/urban-pr-review/compare/v0.11.0...v0.12.0) (2026-08-05)
 
 
