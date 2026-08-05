@@ -461,11 +461,16 @@ async function maybeRerequestReview(data: DataLayer, pr: PullRequest, token: str
   try {
     const pending = await hasPendingCopilotReviewer(pr.repo, pr.number, token);
     if (pending === null) return; // no usable transport → don't spend the cooldown
-    // Record the check now so the cooldown holds whether or not we go on to request — this
-    // bounds the reviewer-state calls to one per window even while a request stays pending.
-    await prs(data).update(pr.pr_key, { last_nudge_at: now() });
-    if (pending) return; // a review is already in flight
+    if (pending) {
+      // A review is already in flight — record the check so the cooldown holds and we don't
+      // re-poll reviewer state until the next window (bounds calls to one per window).
+      await prs(data).update(pr.pr_key, { last_nudge_at: now() });
+      return;
+    }
     const res = await requestCopilotReview(pr.repo, pr.number, token);
+    // Burn the cooldown only once the request itself succeeded: a transient transport failure
+    // throws past this point, so `last_nudge_at` stays put and we retry on the next tick.
+    await prs(data).update(pr.pr_key, { last_nudge_at: now() });
     if (res === "requested") console.log(`[poller] re-requested Copilot review -> ${pr.pr_key}`);
     else if (res === "unavailable") {
       console.warn(`[poller] Copilot not an assignable reviewer on ${pr.pr_key}; relying on timeout`);

@@ -12,6 +12,11 @@ interface In extends Record<string, unknown> {
   status?: string;
   summary?: string;
   question?: string;
+  // False on the "review stalled" arm: `persist-round` already recorded this `round` as
+  // `addressed`, so this escalation must not insert a second `rounds` row for the same
+  // `pr_key`/`round_no` (which would record one round as both addressed and blocked). Absent
+  // on the agent-raised / max-rounds arms, where no prior round row exists — so it defaults on.
+  recordRound?: boolean;
 }
 
 // A string variable, or undefined when it is absent, empty, or whitespace-only.
@@ -41,15 +46,19 @@ const handler: AppJobHandler<In> = async (job, app) => {
   const now = new Date().toISOString();
   const transcript = transcriptOf(job.variables);
 
-  await app.data.table("rounds", "id").insert({
-    pr_key: prKey,
-    round_no: round,
-    status,
-    summary,
-    transcript,
-    started_at: now,
-    ended_at: now,
-  });
+  // Skip the round insert when the caller already recorded this round (the "review stalled"
+  // arm runs after `persist-round`): re-inserting would duplicate the `pr_key`/`round_no` row.
+  if (job.variables.recordRound !== false) {
+    await app.data.table("rounds", "id").insert({
+      pr_key: prKey,
+      round_no: round,
+      status,
+      summary,
+      transcript,
+      started_at: now,
+      ended_at: now,
+    });
+  }
   const escalationId = await app.data.table("escalations", "id").insert({
     pr_key: prKey,
     round_no: round,

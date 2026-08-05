@@ -43,6 +43,7 @@
           <nano:extend name="status" type="string" optional="true" />
           <nano:extend name="summary" type="string" optional="true" />
           <nano:extend name="question" type="string" optional="true" />
+          <nano:extend name="recordRound" type="boolean" optional="true" />
         </nano:shape>
         <nano:shape id="PrPersistEscalationOut" name="Record escalation — result">
           <nano:extend name="escalationId" type="integer" />
@@ -140,6 +141,7 @@
         </zeebe:properties>
         <zeebe:ioMapping>
           <zeebe:input source="=&#34;blocked&#34;" target="status" />
+          <zeebe:input source="=false" target="recordRound" />
           <zeebe:input source="=&#34;No review arrived within the review-wait timeout (&#34; + reviewWaitTimeout + &#34;). A human must decide how to proceed (reply to resume the loop).&#34;" target="question" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
