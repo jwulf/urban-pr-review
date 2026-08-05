@@ -3,11 +3,10 @@
   "extends": ["config:recommended"],
   "customManagers": [
     {
-      "customType": "regex",
-      "description": "Keep the @nanobpm/urban pin in deno.json's import map in sync with the npm registry (the npm manager only sees package.json, so without this deno.json would drift).",
-      "managerFilePatterns": ["/^deno\\.jsonc?$/"],
-      "matchStrings": [
-        "\"npm:(?<depName>@nanobpm/urban)@\\^?(?<currentValue>\\d+\\.\\d+\\.\\d+)\""
+    "customType": "regex",
+    "description": "Keep the @nanobpm/urban pin in deno.json's import map in sync with the npm registry (the npm manager only sees package.json, so without this deno.json would drift).",
+    "fileMatch": ["^deno\\.jsonc?$"],
+    "matchStrings": [
       ],
       "datasourceTemplate": "npm"
     }
