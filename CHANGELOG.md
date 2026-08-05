@@ -1,3 +1,10 @@
+# [0.8.0](https://github.com/jwulf/urban-pr-review/compare/v0.7.0...v0.8.0) (2026-08-05)
+
+
+### Features
+
+* adversarial plan-review gate before fan-out dispatch ([#26](https://github.com/jwulf/urban-pr-review/issues/26)) ([1634c80](https://github.com/jwulf/urban-pr-review/commit/1634c80dfe0953f9a6739b8690ad0c5b7a990c74))
+
 # [0.7.0](https://github.com/jwulf/urban-pr-review/compare/v0.6.0...v0.7.0) (2026-08-04)
 
 
