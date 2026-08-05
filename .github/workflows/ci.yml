@@ -38,3 +38,10 @@ jobs:
 
       - name: Typecheck (Deno)
         run: deno check main.ts 'workers/**/*.ts' 'actions/**/*.ts'
+
+      # Runs the app/*.test.ts suite (never exercised by the check globs above)
+      # AND guards the committed lockfile: --frozen fails the build if deno.lock
+      # is out of date for the full graph (incl. tests), so lockfile drift — e.g.
+      # a regenerate that drops the jsr:@std/* test deps — can't be merged.
+      - name: Test + frozen lockfile guard (Deno)
+        run: deno test -A --frozen
