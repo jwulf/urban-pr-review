@@ -29,17 +29,17 @@ export async function readPrompt(stem: string): Promise<string> {
   const hit = cache.get(stem);
   if (hit !== undefined) return hit;
   const path = `prompts/${stem}.md`;
-  let text = "";
   try {
     const g = globalThis as { Deno?: { readTextFile(p: string): Promise<string> } };
-    text = g.Deno?.readTextFile
+    const text = g.Deno?.readTextFile
       ? await g.Deno.readTextFile(path)
       : await (await import("node:fs/promises")).readFile(path, "utf8");
+    cache.set(stem, text);
+    return text;
   } catch (err) {
     console.warn(`[prompts] could not read ${path}: ${err}`);
+    return "";
   }
-  cache.set(stem, text);
-  return text;
 }
 
 /** Test seam: clear the module read cache so a unit test can stub `prompts/*.md` reads. */
