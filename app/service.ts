@@ -10,6 +10,7 @@
 import type { DataLayer, EngineClient } from "@nanobpm/urban";
 import {
   classifyMergeability,
+  ensureFreshHeadRun,
   fetchPrMeta,
   fetchPrReviews,
   fetchPrState,
@@ -18,6 +19,7 @@ import {
   requestCopilotReview,
 } from "./github.ts";
 import { planTasks, plans } from "./plan.ts";
+import { freshHeadRunAction, loadMergeProtocol } from "./mergeProtocol.ts";
 import { readPrompt } from "./prompts.ts";
 import { clampNudgeMinutes, reviewWaitTimeout } from "./reviewWait.ts";
 import { waveMergeTargets } from "./waves.ts";
@@ -588,7 +590,23 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
         continue;
       }
       const verdict = classifyMergeability(st);
-      if (verdict === "waiting") continue; // GitHub still computing / checks pending
+      if (verdict === "waiting") {
+        // Frugal-CI remedy (#43): when the repo publishes a merge protocol that wants a fresh
+        // head run and the PR has NO head run at all, review has converged but the last push
+        // produced no CI run — so branch protection's required checks read as "expected" forever
+        // and this PR would wait indefinitely. Produce a fresh `pull_request` run once (mark ready
+        // / close+reopen); `freshHeadRunAction` returns null once any run exists, so this fires at
+        // most once and never disturbs a run that's already in flight.
+        const protocol = await loadMergeProtocol(repo, token).catch(() => null);
+        if (protocol) {
+          const action = freshHeadRunAction(protocol, verdict, st.totalChecks, st.isDraft);
+          if (action) {
+            const ok = await ensureFreshHeadRun(repo, number, action).catch(() => false);
+            console.log(`[poller] fresh head run (${action}) ${ok ? "produced" : "skipped"} -> ${prKey}`);
+          }
+        }
+        continue; // GitHub still computing / checks pending
+      }
       await flipToMergingThenPublish(data, engine, prKey, "waiting_merge", {
         name: "merge-ready",
         correlationKey: prKey,
