@@ -121,7 +121,8 @@
                 { "field": "question", "header": "Question" },
                 { "field": "status", "header": "Status" },
                 { "field": "answer", "header": "Answer" }
-              ]
+              ],
+              "lazyField": { "field": "transcript", "label": "Agent response", "lazy": true }
             },
             {
               "title": "Depends on",

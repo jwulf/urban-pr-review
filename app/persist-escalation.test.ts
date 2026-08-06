@@ -6,7 +6,7 @@
 // passes `recordRound=false`, which must suppress the round insert while still opening the
 // escalation. The agent-raised / max-rounds arms omit the flag (no prior round row) and must
 // still record the round.
-import { assertEquals, assertRejects } from "jsr:@std/assert@1";
+import { assert, assertEquals } from "jsr:@std/assert@1";
 import handler from "../workers/persist-escalation/worker.ts";
 
 function fakeApp() {
@@ -70,23 +70,50 @@ Deno.test("a padded question is persisted trimmed (no whitespace drift)", async 
 
 // A round that fell through the `gw-status` default (no `converged`/`addressed` status and no
 // question — the prompt-less-agent failure behind the empty "(no question provided)" escalations
-// on Magikcraft/nano-bpm #597/#599) must NOT open an unanswerable escalation. It fails loudly
-// instead (like the sibling `persist-task-escalation`), and writes nothing.
-Deno.test("blank question refuses to open an escalation and writes nothing", async () => {
+// on Magikcraft/nano-bpm #597/#599) must NOT throw (which parked an un-remediable JobNoRetries
+// incident). It now opens an *answerable* escalation with a fabricated, concrete question and the
+// agent's transcript attached, so a human can unblock the loop entirely from the UI.
+Deno.test("blank question fabricates an answerable escalation (no throw, no incident)", async () => {
   for (const question of [undefined, "", "   "]) {
     const { app, inserts, updates } = fakeApp();
-    const job = { variables: { prKey: "o/r#1", round: 2, ...(question === undefined ? {} : { question }) } };
-    await assertRejects(
-      // deno-lint-ignore no-explicit-any
-      async () => {
-        // deno-lint-ignore no-explicit-any
-        await handler(job as any, app as any);
+    const job = {
+      variables: {
+        prKey: "o/r#1",
+        round: 2,
+        ...(question === undefined ? {} : { question }),
+        "io.nanobpm.agentResult": { output: "the agent's prose review, no result file" },
       },
-      Error,
-      "missing question",
+    };
+    // deno-lint-ignore no-explicit-any
+    const out = await handler(job as any, app as any);
+    // deno-lint-ignore no-explicit-any
+    assertEquals((out as any).escalationId, 42, "an escalation is opened, not refused");
+    assertEquals(inserts.escalations.length, 1, "escalation row written");
+    // deno-lint-ignore no-explicit-any
+    const esc = inserts.escalations[0] as any;
+    assert(esc.question.trim().length > 0, "fabricated question is concrete/non-blank");
+    assert(
+      esc.question.includes("machine-readable result"),
+      "no-result rounds explain the missing status",
     );
-    assertEquals(inserts.rounds.length, 0, "no round row on refusal");
-    assertEquals(inserts.escalations.length, 0, "no escalation row on refusal");
-    assertEquals(updates.pull_requests?.length ?? 0, 0, "pull_requests not mutated on refusal");
+    assertEquals(esc.transcript, "the agent's prose review, no result file", "transcript attached");
+    // Default status for an unclassified escalation is a question needing input.
+    assertEquals(esc.kind, "question");
+    // deno-lint-ignore no-explicit-any
+    const pr = updates.pull_requests![0] as any;
+    assertEquals(pr.patch.open_escalation_question, esc.question, "denormalised question set");
   }
+});
+
+// When a non-empty-but-unclassified status arrives with no question, the fabricated question
+// names the status so the human sees what the agent reported.
+Deno.test("unclassified status without a question names the status in the fabricated question", async () => {
+  const { app, inserts } = fakeApp();
+  const job = { variables: { prKey: "o/r#1", round: 3, status: "in_progress" } };
+  // deno-lint-ignore no-explicit-any
+  await handler(job as any, app as any);
+  // deno-lint-ignore no-explicit-any
+  const esc = inserts.escalations[0] as any;
+  assert(esc.question.includes("in_progress"), "fabricated question references the raw status");
+  assertEquals(esc.kind, "blocker", "a non needs_input status is a blocker escalation");
 });
