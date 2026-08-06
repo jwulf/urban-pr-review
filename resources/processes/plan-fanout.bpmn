@@ -21,7 +21,8 @@
           <!-- Base prompt: prompts/plan.md, injected into the header below at deploy time.
                (The template token lives on the header value, NOT in this comment — a token in a
                comment gets substituted too, ballooning the comment and risking XML corruption if
-               the prompt contains "- - >".) -->
+               the prompt contains a double-hyphen sequence, which is illegal inside an XML
+               comment.) -->
           <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{plan}}" />
         </zeebe:taskHeaders>
         <zeebe:ioMapping>
