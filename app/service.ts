@@ -20,7 +20,6 @@ import {
 } from "./github.ts";
 import { planTasks, plans } from "./plan.ts";
 import { freshHeadRunAction, loadMergeProtocol } from "./mergeProtocol.ts";
-import { readPrompt } from "./prompts.ts";
 import { clampNudgeMinutes, reviewWaitTimeout } from "./reviewWait.ts";
 import { waveMergeTargets } from "./waves.ts";
 
@@ -277,9 +276,6 @@ export async function submitPr(
       round: 1,
       maxRounds: clampRounds(maxRounds, MAX_ROUNDS),
       reviewWaitTimeout: REVIEW_WAIT_TIMEOUT,
-      // Base prompt bridge (see app/prompts.ts): also carried as a variable because the engine
-      // does not deliver the `{{review-round}}` task header to the remote agent.
-      prompt: await readPrompt("review-round"),
     },
   });
   if (processInstanceKey != null) {
@@ -306,9 +302,6 @@ export async function startMerge(
       round: pr.round,
       ciFixRound: 0,
       ciFixMax: MAX_CI_FIX_ROUNDS,
-      // Base prompt bridge (see app/prompts.ts): the merge loop's only agent task is
-      // senior:fix-ci, whose `{{fix-ci}}` header the engine does not deliver.
-      prompt: await readPrompt("fix-ci"),
     },
   });
   if (processInstanceKey != null) {
