@@ -51,7 +51,7 @@ const handler: AppJobHandler<In> = async (job, app) => {
   const question = nonBlank(job.variables.question);
   if (!question) {
     throw new Error(
-      "persist-escalation: missing question — refusing to open an unanswerable escalation (round returned no actionable status)",
+      "persist-escalation: missing question — refusing to open an unanswerable escalation (a blank question means a prompt-less / no-result round fell through the `gw-status` default)",
     );
   }
   const kind = status === "needs_input" ? "question" : "blocker";

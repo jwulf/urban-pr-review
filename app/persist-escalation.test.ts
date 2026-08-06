@@ -55,10 +55,8 @@ Deno.test("escalation arm without the flag still records the round", async () =>
   assertEquals((inserts.rounds[0] as any).round_no, 3);
 });
 
-// A round that fell through the `gw-status` default (no `converged`/`addressed` status and no
-// question — the prompt-less-agent failure behind the empty "(no question provided)" escalations
-// on Magikcraft/nano-bpm #597/#599) must NOT open an unanswerable escalation. It fails loudly
-// instead (like the sibling `persist-task-escalation`), and writes nothing.
+// A blank question would have to be trimmed away, so a padded-but-non-blank question is stored
+// trimmed (matching the sibling `persist-task-escalation`) — no whitespace drift into the UI/DB.
 Deno.test("a padded question is persisted trimmed (no whitespace drift)", async () => {
   const { app, inserts, updates } = fakeApp();
   const job = { variables: { prKey: "o/r#1", round: 4, status: "needs_input", question: "  needs a decision  " } };
@@ -70,6 +68,10 @@ Deno.test("a padded question is persisted trimmed (no whitespace drift)", async 
   assertEquals((updates.pull_requests![0] as any).patch.open_escalation_question, "needs a decision", "denormalised question is trimmed too");
 });
 
+// A round that fell through the `gw-status` default (no `converged`/`addressed` status and no
+// question — the prompt-less-agent failure behind the empty "(no question provided)" escalations
+// on Magikcraft/nano-bpm #597/#599) must NOT open an unanswerable escalation. It fails loudly
+// instead (like the sibling `persist-task-escalation`), and writes nothing.
 Deno.test("blank question refuses to open an escalation and writes nothing", async () => {
   for (const question of [undefined, "", "   "]) {
     const { app, inserts, updates } = fakeApp();
