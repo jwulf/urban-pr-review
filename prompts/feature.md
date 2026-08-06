@@ -41,6 +41,13 @@ process with no memory of your last run, the branch name MUST be derivable from
    linking the parent issue (`Depends-on:`/`Closes` as appropriate).
 4. Clean up any scratch clone/worktree you created outside the commit.
 
+> **Do not request the Copilot review yourself.** When you open a *ready* PR the
+> app enrolls it into the review-convergence loop and requests the initial
+> Copilot review for you. In particular, **never escalate because Copilot is
+> absent from `suggestedReviewers` / `suggestedActors`** — those lists resolve
+> Users, so the Copilot bot is expected to be missing from them even where it
+> reviews fine; that is not a blocker.
+
 ## When you get stuck — escalate, don't discard your work
 
 If you cannot proceed without a human decision (ambiguous requirement, a design

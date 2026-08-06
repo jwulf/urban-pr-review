@@ -71,7 +71,24 @@ Because several agents may run on the same host at once:
    gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=THREAD_NODE_ID
    ```
 6. **Re-request review** from Copilot so a fresh review lands (this is what the
-   Nano poller waits for).
+   Nano poller waits for). Request it with the REST reviewers endpoint and the
+   **exact** `[bot]` login — this is the only method that works:
+
+   ```sh
+   gh api repos/OWNER/REPO/pulls/PR/requested_reviewers -X POST \
+     -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+   ```
+
+   **Never gate this on `suggestedReviewers` / `suggestedActors`, and never
+   escalate merely because Copilot is absent from them.** Those lists resolve
+   *Users*, so the Copilot **bot** is routinely absent even on repos where it
+   reviews fine — its absence there is **expected and not a blocker**. The REST
+   POST above still succeeds. (Likewise `gh pr edit --add-reviewer Copilot`, the
+   bare `Copilot` login, and the GraphQL `requestReviews` mutation all silently
+   no-op — only the REST call above works.) Copilot is genuinely unavailable
+   **only** if that REST POST returns HTTP 422; if it does, say so explicitly in
+   your escalation — do not report "Copilot can't be requested" for any other
+   reason.
 7. **Clean up.** Before returning, remove anything you created outside the commit so
    host mode does not leak resources: `git worktree remove` any worktree you added,
    delete scratch branches/clones/checkouts, and remove temp/scratch files and build
