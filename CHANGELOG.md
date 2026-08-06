@@ -1,3 +1,10 @@
+## [0.12.4](https://github.com/jwulf/urban-pr-review/compare/v0.12.3...v0.12.4) (2026-08-06)
+
+
+### Bug Fixes
+
+* **escalation:** make no-result rounds recoverable from the UI ([#38](https://github.com/jwulf/urban-pr-review/issues/38)) ([b7259a0](https://github.com/jwulf/urban-pr-review/commit/b7259a042fddfeee4f6bce90461e171afda5dc9f)), closes [597/#599](https://github.com/jwulf/urban-pr-review/issues/599)
+
 ## [0.12.3](https://github.com/jwulf/urban-pr-review/compare/v0.12.2...v0.12.3) (2026-08-06)
 
 
