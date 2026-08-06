@@ -16,7 +16,7 @@
 // "unresolved"). Importing from `@nanobpm/urban/runtime` also asserts the installed urban is new
 // enough to substitute at all (the capability was added in the 0.22 / nano-ide #106 release).
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { applyTemplates } from "@nanobpm/urban/runtime";
 
 // The reserved header carrying an agent's base prompt. A blank value here means the agent gets no
@@ -53,7 +53,7 @@ function templateMap(root: string, patterns: string[]): Record<string, string> {
   const map: Record<string, string> = {};
   for (const pattern of patterns) {
     for (const rel of expandGlob(root, pattern)) {
-      const stem = rel.slice(rel.lastIndexOf("/") + 1).replace(/\.[^.]+$/, "");
+      const stem = basename(rel).replace(/\.[^.]+$/, "");
       map[stem] = readFileSync(join(root, rel), "utf8");
     }
   }
