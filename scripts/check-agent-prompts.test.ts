@@ -73,7 +73,7 @@ Deno.test("fails when a reserved agent-prompt header is blank", async () => {
 
 Deno.test("checks the real repo: all committed agent prompts resolve", () => {
   // The guard must be green against the actual app it protects — this is the case CI relies on.
-  const repoRoot = new URL("../", import.meta.url).pathname;
+  const repoRoot = decodeURIComponent(new URL("../", import.meta.url).pathname);
   const res = checkAgentPrompts(repoRoot);
   assertEquals(res.errors, []);
   assert(res.ok);

@@ -59,6 +59,17 @@ Deno.test("escalation arm without the flag still records the round", async () =>
 // question — the prompt-less-agent failure behind the empty "(no question provided)" escalations
 // on Magikcraft/nano-bpm #597/#599) must NOT open an unanswerable escalation. It fails loudly
 // instead (like the sibling `persist-task-escalation`), and writes nothing.
+Deno.test("a padded question is persisted trimmed (no whitespace drift)", async () => {
+  const { app, inserts, updates } = fakeApp();
+  const job = { variables: { prKey: "o/r#1", round: 4, status: "needs_input", question: "  needs a decision  " } };
+  // deno-lint-ignore no-explicit-any
+  await handler(job as any, app as any);
+  // deno-lint-ignore no-explicit-any
+  assertEquals((inserts.escalations[0] as any).question, "needs a decision", "escalation stores the trimmed question");
+  // deno-lint-ignore no-explicit-any
+  assertEquals((updates.pull_requests![0] as any).patch.open_escalation_question, "needs a decision", "denormalised question is trimmed too");
+});
+
 Deno.test("blank question refuses to open an escalation and writes nothing", async () => {
   for (const question of [undefined, "", "   "]) {
     const { app, inserts, updates } = fakeApp();
