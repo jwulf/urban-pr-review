@@ -70,25 +70,29 @@ Because several agents may run on the same host at once:
    # Resolve the thread whose databaseId matched the comment you handled:
    gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=THREAD_NODE_ID
    ```
-6. **Re-request review** from Copilot so a fresh review lands (this is what the
-   Nano poller waits for). Request it with the REST reviewers endpoint and the
-   **exact** `[bot]` login — this is the only method that works:
+6. **Ensure a review is requested — idempotently, and never destructively.**
+   The Nano poller waits for Copilot's review, so a review must be *pending or
+   in-flight* when you return. Get the current requested reviewers and add
+   Copilot **only if it is not already there**:
 
    ```sh
-   gh api repos/OWNER/REPO/pulls/PR/requested_reviewers -X POST \
-     -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+   # Add Copilot only when it is not already a requested reviewer.
+   pending=$(gh api repos/$O/$R/pulls/$N/requested_reviewers --jq '.users[].login' 2>/dev/null)
+   if ! printf '%s\n' "$pending" | grep -qx 'Copilot'; then
+     gh api -X POST repos/$O/$R/pulls/$N/requested_reviewers \
+       -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
+   fi
    ```
 
-   **Never gate this on `suggestedReviewers` / `suggestedActors`, and never
-   escalate merely because Copilot is absent from them.** Those lists resolve
-   *Users*, so the Copilot **bot** is routinely absent even on repos where it
-   reviews fine — its absence there is **expected and not a blocker**. The REST
-   POST above still succeeds. (Likewise `gh pr edit --add-reviewer Copilot`, the
-   bare `Copilot` login, and the GraphQL `requestReviews` mutation all silently
-   no-op — only the REST call above works.) Copilot is genuinely unavailable
-   **only** if that REST POST returns HTTP 422; if it does, say so explicitly in
-   your escalation — do not report "Copilot can't be requested" for any other
-   reason.
+   **NEVER remove/delete the reviewer.** Do **not** run
+   `gh api -X DELETE .../requested_reviewers` or `gh pr edit --remove-reviewer`
+   as a way to "force a fresh review": deleting a *pending* request cancels the
+   in-flight review, and GitHub debounces a just-removed reviewer (the re-add
+   returns `201` but the bot never re-attaches and never emits a review — which
+   wedges this process). A **fresh** review is triggered by **pushing new
+   commits** (step 3), not by toggling the reviewer. If Copilot is already a
+   requested reviewer, that means a review is already pending — leave it alone
+   and let the process wait.
 7. **Clean up.** Before returning, remove anything you created outside the commit so
    host mode does not leak resources: `git worktree remove` any worktree you added,
    delete scratch branches/clones/checkouts, and remove temp/scratch files and build
@@ -105,6 +109,21 @@ Consider the PR **converged** when the latest review has no actionable comment:
 - Copilot is looping — reiterating a point you already addressed or pushed back
   on (two rounds of the same substantive point = converged).
 
+### No review has landed yet — wait, do NOT escalate
+
+A PR is **not** converged merely because there are zero reviews and zero
+comments. On the first round (or whenever Copilot's review is still pending)
+there is simply nothing to triage *yet*. In that case:
+
+- Ensure the review is requested idempotently (step 6) — do **not** delete and
+  re-add it.
+- Return `addressed` with a `summary` noting you are awaiting the initial
+  review. The process will then **durably wait** for the review to land (and has
+  its own timeout that escalates a genuinely stalled review for you).
+
+Only return `blocked`/`needs_input` for a real external blocker or a real human
+decision — never because a requested review simply hasn't arrived yet.
+
 ## Return value (job result variables)
 
 Return **one** of:
@@ -112,7 +131,7 @@ Return **one** of:
 | `status`      | when                                                          | also set        |
 |---------------|---------------------------------------------------------------|-----------------|
 | `converged`   | nothing actionable left (see above)                           | `summary`       |
-| `addressed`   | you made changes + pushed + re-requested review this round    | `summary`       |
+| `addressed`   | you made changes + pushed + re-requested review this round, **or** there is nothing to triage yet and you are awaiting a pending review | `summary`       |
 | `needs_input` | you hit a decision only a human can make                      | `summary`, `question` |
 | `blocked`     | you are stuck on something external (auth, failing push, missing secret) | `summary`, `question` |
 
