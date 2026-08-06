@@ -30,6 +30,7 @@
     "upgrade": "node --experimental-strip-types scripts/upgrade-from-pack.ts",
     "check": "urban check",
     "typecheck": "tsc --noEmit",
+    "check:prompts": "deno run -A scripts/check-agent-prompts.ts",
     "gen": "urban gen",
     "gen:check": "urban gen --check",
     "layout": "node --experimental-strip-types scripts/layout-bpmn.ts",
@@ -38,7 +39,7 @@
     "test": "deno test -A"
   },
   "dependencies": {
-    "@nanobpm/urban": "^0.21.0"
+    "@nanobpm/urban": "^0.22.0"
   },
   "devDependencies": {
     "@semantic-release/changelog": "^6.0.3",

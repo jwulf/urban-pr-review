@@ -39,6 +39,12 @@ jobs:
       - name: Typecheck (Deno)
         run: deno check main.ts 'workers/**/*.ts' 'actions/**/*.ts'
 
+      # Deploy-safety gate: every model-authored `{{template}}` agent-prompt header must resolve
+      # to a declared, non-blank prompt (and no agent prompt may ship blank). A broken/blank token
+      # means a prompt-less agent — the root of the empty escalations on nano-bpm #597/#599.
+      - name: Check agent prompt templates
+        run: deno run -A scripts/check-agent-prompts.ts
+
       # Runs the app/*.test.ts suite (never exercised by the check globs above)
       # AND guards the committed lockfile: --frozen fails the build if deno.lock
       # is out of date for the full graph (incl. tests), so lockfile drift — e.g.
