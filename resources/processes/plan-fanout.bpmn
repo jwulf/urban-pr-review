@@ -18,7 +18,11 @@
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="senior:plan" />
         <zeebe:taskHeaders>
-          <!-- Base prompt via deploy-time template (prompts/plan.md → {{plan}}). -->
+          <!-- Base prompt: prompts/plan.md, injected into the header below at deploy time.
+               (The template token lives on the header value, NOT in this comment — a token in a
+               comment gets substituted too, ballooning the comment and risking XML corruption if
+               the prompt contains a double-hyphen sequence, which is illegal inside an XML
+               comment.) -->
           <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{plan}}" />
         </zeebe:taskHeaders>
         <zeebe:ioMapping>
@@ -41,8 +45,9 @@
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="senior:plan-review" />
         <zeebe:taskHeaders>
-          <!-- Base prompt via deploy-time template (prompts/plan-review.md → {{plan-review}}).
-               No dynamic suffix: the reviewer reads the recorded plan from the repo. -->
+          <!-- Base prompt: prompts/plan-review.md, injected into the header below at deploy time.
+               No dynamic suffix: the reviewer reads the recorded plan from the repo. (Keep the
+               template token on the header value only, never in a comment — see the plan task.) -->
           <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{plan-review}}" />
         </zeebe:taskHeaders>
         <zeebe:ioMapping>
@@ -96,8 +101,9 @@
         <bpmn:extensionElements>
           <zeebe:taskDefinition type="senior:feature" />
           <zeebe:taskHeaders>
-            <!-- Base prompt via deploy-time template (prompts/feature.md → {{feature}}). The
-                 per-task brief is appended verbatim via appendPrompt below. -->
+            <!-- Base prompt: prompts/feature.md, injected into the header below at deploy time.
+                 The per-task brief is appended verbatim via appendPrompt below. (Keep the template
+                 token on the header value only, never in a comment — see the plan task.) -->
             <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{feature}}" />
           </zeebe:taskHeaders>
           <zeebe:ioMapping>
