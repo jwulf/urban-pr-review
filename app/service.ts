@@ -226,6 +226,14 @@ export async function submitPr(
 
   const ts = now();
   if (existing) {
+    // A prior run (cancelled, converged, or otherwise superseded) may have left an OPEN
+    // escalation row plus the denormalised pointer on the PR. A fresh convergence run must not
+    // inherit that stale answer form — the "(no question provided)" bleed-through on resubmit
+    // (Magikcraft/nano-bpm #597/#599). Mark any still-open escalations `stale` and clear the
+    // pointer below, mirroring the plan re-plan cleanup (issue #25 in plan.ts).
+    for (const e of await escs(data).find({ pr_key: parsed.prKey, status: "open" })) {
+      await escs(data).update(e.id, { status: "stale" });
+    }
     // Re-open a previously converged/abandoned/merged PR for a fresh convergence run.
     await table.update(parsed.prKey, {
       status: "converging",
@@ -238,6 +246,10 @@ export async function submitPr(
       outcome: null,
       converged_at: null,
       merged_at: null,
+      // Drop any denormalised open-escalation pointer from the prior run so the answer form
+      // does not resurface a dead/stale question on the re-opened PR.
+      open_escalation_id: null,
+      open_escalation_question: null,
       updated_at: ts,
     });
   } else {

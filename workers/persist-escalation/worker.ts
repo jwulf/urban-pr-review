@@ -33,6 +33,24 @@ function transcriptOf(vars: Record<string, unknown>): string | null {
   return typeof env?.output === "string" ? env.output : null;
 }
 
+// Synthesize a concrete, answerable question when the agent left one blank. A blank question is
+// almost always a *no-result* round: a prompt-less agent that never wrote its result file, so
+// `status` is empty and `gw-status` falls through its default `f_escalate` arm (the empty
+// "(no question provided)" escalations on Magikcraft/nano-bpm #597/#599). Throwing here parked a
+// `JobNoRetries` incident that could NOT be diagnosed or remediated from the UI. Instead we open
+// an escalation a human can actually answer, with the agent's transcript attached below it.
+function fabricateQuestion(rawStatus: string | undefined, hasTranscript: boolean): string {
+  const tail = hasTranscript
+    ? " Review the agent's response shown below, then reply with how it should proceed — or cancel and resubmit."
+    : " No agent response was captured. Reply with how it should proceed, or cancel and resubmit.";
+  if (!rawStatus) {
+    return "The review agent finished without a machine-readable result (no status was reported), " +
+      "so this round could not be classified as converged, addressed, or a specific request." + tail;
+  }
+  return `The review agent reported status "${rawStatus}" without a question, so this round ` +
+    "could not be resolved automatically." + tail;
+}
+
 const handler: AppJobHandler<In> = async (job, app) => {
   const { prKey, round, summary } = job.variables;
   // `status` drives the escalation kind (control flow); a blank/absent status is an
@@ -40,23 +58,18 @@ const handler: AppJobHandler<In> = async (job, app) => {
   // onto pull_requests below and bound by the UI answer form, so it must be a
   // concrete, non-blank value. `summary` is left undefined so the write boundary
   // omits it and the nullable column stays NULL.
-  const status = nonBlank(job.variables.status) ?? "needs_input";
-  // A blank question must never open an escalation: it would surface a non-actionable
-  // "(no question provided)" placeholder in the answer form (the empty escalations on
-  // Magikcraft/nano-bpm #597/#599). Every legitimate arm sets a concrete question — the agent
-  // contract requires one for needs_input/blocked, and the max-rounds + review-timeout arms set a
-  // literal via the model. A blank here means a prompt-less / no-result round fell through the
-  // `gw-status` default; fail loudly (mirroring the sibling `persist-task-escalation`) so it
-  // surfaces as an incident rather than parking an unanswerable escalation.
-  const question = nonBlank(job.variables.question);
-  if (!question) {
-    throw new Error(
-      "persist-escalation: missing question — refusing to open an unanswerable escalation (a blank question means a prompt-less / no-result round fell through the `gw-status` default)",
-    );
-  }
+  const rawStatus = nonBlank(job.variables.status);
+  const status = rawStatus ?? "needs_input";
+  const transcript = transcriptOf(job.variables);
+  // A blank question must never open an unanswerable escalation. Every legitimate arm sets a
+  // concrete question — the agent contract requires one for needs_input/blocked, and the
+  // max-rounds + review-timeout arms set a literal via the model. When one is still missing
+  // (a no-result round through the `gw-status` default), fabricate an actionable question that
+  // references the attached transcript rather than throwing (which parked an un-remediable
+  // incident). This keeps the loop recoverable entirely from the UI.
+  const question = nonBlank(job.variables.question) ?? fabricateQuestion(rawStatus, transcript != null);
   const kind = status === "needs_input" ? "question" : "blocker";
   const now = new Date().toISOString();
-  const transcript = transcriptOf(job.variables);
 
   // Skip the round insert when the caller already recorded this round (the "review stalled"
   // arm runs after `persist-round`): re-inserting would duplicate the `pr_key`/`round_no` row.
