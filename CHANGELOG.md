@@ -1,3 +1,10 @@
+## [0.12.3](https://github.com/jwulf/urban-pr-review/compare/v0.12.2...v0.12.3) (2026-08-06)
+
+
+### Bug Fixes
+
+* **prompts:** deliver agent base prompts as a variable bridge (unblock review resubmit) ([#37](https://github.com/jwulf/urban-pr-review/issues/37)) ([6ae1c05](https://github.com/jwulf/urban-pr-review/commit/6ae1c057c947b4251d5f390fb3beed4ffa61125f)), closes [#36](https://github.com/jwulf/urban-pr-review/issues/36) [#31](https://github.com/jwulf/urban-pr-review/issues/31) [597/#599](https://github.com/jwulf/urban-pr-review/issues/599) [#36](https://github.com/jwulf/urban-pr-review/issues/36)
+
 ## [0.12.2](https://github.com/jwulf/urban-pr-review/compare/v0.12.1...v0.12.2) (2026-08-06)
 
 
