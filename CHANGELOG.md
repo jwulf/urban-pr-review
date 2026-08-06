@@ -1,3 +1,10 @@
+# [0.14.0](https://github.com/jwulf/urban-pr-review/compare/v0.13.0...v0.14.0) (2026-08-06)
+
+
+### Features
+
+* **merge:** execute a per-repo merge protocol (fresh head run + [@mergifyio](https://github.com/mergifyio) queue) ([#44](https://github.com/jwulf/urban-pr-review/issues/44)) ([712a0eb](https://github.com/jwulf/urban-pr-review/commit/712a0eb212616152a13a23b2306bebc19349746d)), closes [#43](https://github.com/jwulf/urban-pr-review/issues/43)
+
 # [0.13.0](https://github.com/jwulf/urban-pr-review/compare/v0.12.4...v0.13.0) (2026-08-06)
 
 
