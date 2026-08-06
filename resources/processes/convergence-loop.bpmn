@@ -93,10 +93,12 @@
       <bpmn:incoming>f_toStatus</bpmn:incoming>
       <bpmn:outgoing>f_converged</bpmn:outgoing>
       <bpmn:outgoing>f_addressed</bpmn:outgoing>
+      <bpmn:outgoing>f_waiting</bpmn:outgoing>
       <bpmn:outgoing>f_escalate</bpmn:outgoing>
     </bpmn:exclusiveGateway>
     <bpmn:exclusiveGateway id="gw-guard" name="rounds left?" default="f_guardOk">
       <bpmn:incoming>f_addressed</bpmn:incoming>
+      <bpmn:incoming>f_waiting</bpmn:incoming>
       <bpmn:outgoing>f_guardMax</bpmn:outgoing>
       <bpmn:outgoing>f_guardOk</bpmn:outgoing>
     </bpmn:exclusiveGateway>
@@ -201,6 +203,9 @@
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="f_addressed" name="addressed" sourceRef="gw-status" targetRef="gw-guard">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=status = "addressed"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_waiting" name="waiting" sourceRef="gw-status" targetRef="gw-guard">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=status = "waiting"</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
     <bpmn:sequenceFlow id="f_escalate" name="needs_input / blocked" sourceRef="gw-status" targetRef="persist-escalation" />
     <bpmn:sequenceFlow id="f_guardMax" name="max rounds" sourceRef="gw-guard" targetRef="persist-escalation-maxrounds">
@@ -331,7 +336,15 @@
         <di:waypoint x="441" y="280" />
         <di:waypoint x="591" y="280" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="483" y="258" width="67" height="14" />
+          <dc:Bounds x="446" y="206" width="67" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_waiting" bpmnElement="f_waiting">
+        <di:waypoint x="441" y="145" />
+        <di:waypoint x="441" y="280" />
+        <di:waypoint x="591" y="280" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="380" y="206" width="56" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_f_escalate" bpmnElement="f_escalate">
