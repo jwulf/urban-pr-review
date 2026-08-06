@@ -22,6 +22,7 @@
           <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{plan}}" />
         </zeebe:taskHeaders>
         <zeebe:ioMapping>
+          <zeebe:input source="=agentPrompts.plan" target="prompt" />
           <zeebe:input source="=(if (planFindings = null or planFindings = &#34;&#34;) then &#34;&#34; else &#34;&#10;&#10;---&#10;&#10;A prior review REJECTED your last plan. Address every point, then re-emit the full plan:&#10;&#10;&#34; + planFindings)" target="appendPrompt" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
@@ -44,6 +45,9 @@
                No dynamic suffix: the reviewer reads the recorded plan from the repo. -->
           <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{plan-review}}" />
         </zeebe:taskHeaders>
+        <zeebe:ioMapping>
+          <zeebe:input source="=agentPrompts.planReview" target="prompt" />
+        </zeebe:ioMapping>
       </bpmn:extensionElements>
       <bpmn:incoming>f_toReviewPlan</bpmn:incoming>
       <bpmn:outgoing>f_toRecordPlanReview</bpmn:outgoing>
@@ -97,6 +101,7 @@
             <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{feature}}" />
           </zeebe:taskHeaders>
           <zeebe:ioMapping>
+            <zeebe:input source="=agentPrompts.feature" target="prompt" />
             <zeebe:input source="=&#34;&#10;&#10;---&#10;&#10;&#34; + task.prompt" target="appendPrompt" />
           </zeebe:ioMapping>
         </bpmn:extensionElements>

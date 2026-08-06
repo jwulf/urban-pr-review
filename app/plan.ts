@@ -10,6 +10,7 @@
 // the process. Data access goes through the record gateway (`data.table`), never
 // hand-written SQL — matching app/service.ts.
 import type { DataLayer, EngineClient } from "@nanobpm/urban";
+import { readPrompt } from "./prompts.ts";
 
 /** The BPMN process this module drives (resources/processes/plan-fanout.bpmn). */
 export const PLAN_PROCESS_ID = "plan-fanout";
@@ -229,6 +230,15 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
       issueNumber: parsed.number,
       issueUrl: parsed.url,
       planFindings: null,
+      // Base prompt bridge (see app/prompts.ts): plan-fanout has three agent tasks in one
+      // instance (senior:plan, senior:plan-review, senior:feature), so their base prompts ride
+      // a map that each task's ioMapping projects into a task-scoped `prompt` variable. Keyed
+      // camelCase (no hyphens) so the FEEL `agentPrompts.planReview` dot-access parses.
+      agentPrompts: {
+        plan: await readPrompt("plan"),
+        planReview: await readPrompt("plan-review"),
+        feature: await readPrompt("feature"),
+      },
     },
   });
   if (processInstanceKey != null) {
