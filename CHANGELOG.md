@@ -1,3 +1,10 @@
+# [0.13.0](https://github.com/jwulf/urban-pr-review/compare/v0.12.4...v0.13.0) (2026-08-06)
+
+
+### Features
+
+* **pages:** make the pull-request list collapsible, remembered across sessions ([#41](https://github.com/jwulf/urban-pr-review/issues/41)) ([62e9249](https://github.com/jwulf/urban-pr-review/commit/62e924949b109f14657d103f1b69c9535ce3f205))
+
 ## [0.12.4](https://github.com/jwulf/urban-pr-review/compare/v0.12.3...v0.12.4) (2026-08-06)
 
 
