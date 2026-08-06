@@ -45,6 +45,7 @@
       "id": "prs",
       "props": {
         "title": "Pull requests",
+        "collapsible": true,
         "rowKey": "pr_key",
         "refreshMs": 5000,
         "data": {
