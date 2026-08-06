@@ -1,3 +1,10 @@
+## [0.12.2](https://github.com/jwulf/urban-pr-review/compare/v0.12.1...v0.12.2) (2026-08-06)
+
+
+### Bug Fixes
+
+* adopt urban 0.22 for {{template}} substitution + guard prompt-less agents ([#35](https://github.com/jwulf/urban-pr-review/issues/35)) ([6ad92c1](https://github.com/jwulf/urban-pr-review/commit/6ad92c1d1c73c87e43efc49958a5b9a41debfb13)), closes [#34](https://github.com/jwulf/urban-pr-review/issues/34) [#597](https://github.com/jwulf/urban-pr-review/issues/597) [#599](https://github.com/jwulf/urban-pr-review/issues/599) [#31](https://github.com/jwulf/urban-pr-review/issues/31) [#106](https://github.com/jwulf/urban-pr-review/issues/106) [jwulf/urban-pr-review#34](https://github.com/jwulf/urban-pr-review/issues/34)
+
 ## [0.12.1](https://github.com/jwulf/urban-pr-review/compare/v0.12.0...v0.12.1) (2026-08-05)
 
 
