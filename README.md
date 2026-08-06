@@ -121,6 +121,56 @@ Now every PR you submit gets picked up automatically. Start a **second** worker
 whichever PRs are ready — that is the idle-time you reclaim. Run more than one job
 at once per worker with `--max-parallel 2`.
 
+### Hire one worker for the whole fleet (all three workflows)
+
+The `reviewer` above only services the review loop (`senior:pr-review`). This app
+actually runs **three** durable workflows — `plan-fanout`, `convergence-loop`, and
+`merge-loop` — whose agent (external-worker) tasks span **five** capabilities. Hire
+a single **senior** worker enrolled in all of them:
+
+```sh
+c8ctl nano hire \
+  --name fleet \
+  --rank senior \
+  --capabilities pr-review plan plan-review feature fix-ci \
+  --command 'copilot -p - --allow-all-tools' \
+  --model <your-model>
+
+c8ctl nano work fleet         # polls every senior:* agent task below until Ctrl-C
+```
+
+`--rank senior` × those five capabilities subscribes the worker to exactly the
+agent task types the three models emit (the rank×capability matrix — one
+`senior:<capability>` job type per capability):
+
+| Capability | Job type | Model | Task |
+| --- | --- | --- | --- |
+| `pr-review` | `senior:pr-review` | `convergence-loop` | Review round (drive a PR to convergence) |
+| `plan` | `senior:plan` | `plan-fanout` | Plan an issue into levelized tasks |
+| `plan-review` | `senior:plan-review` | `plan-fanout` | Review the plan before fan-out |
+| `feature` | `senior:feature` | `plan-fanout` | Implement one planned task → open a PR |
+| `fix-ci` | `senior:fix-ci` | `merge-loop` | Green a `blocked` PR's failing checks |
+
+The app-hosted `pr.*` workers (record-plan, select-wave, finalize, merge, …) are
+**not** in this list — they run inside the deployed app, not on an agent worker.
+
+Already have a narrower worker (e.g. the `reviewer` above)? You don't need to
+re-hire — use **`c8ctl nano assign`** to extend an existing profile's capabilities
+in place. It **adds** the given roles to the profile's current set (a union; it
+never removes one) and reprints the updated job-type matrix:
+
+```sh
+# reviewer had just `pr-review`; add the remaining four so it services the fleet
+c8ctl nano assign reviewer plan plan-review feature fix-ci
+
+# equivalent comma-separated form
+c8ctl nano assign reviewer --capabilities plan,plan-review,feature,fix-ci
+
+# restart its worker so it picks up the newly added senior:* job types
+c8ctl nano work reviewer
+```
+
+
 ### Isolation — each job gets its own clean workspace
 
 In the default **host mode** (`--sandbox none`), the worker provisions a
