@@ -1,3 +1,10 @@
+## [0.14.2](https://github.com/jwulf/urban-pr-review/compare/v0.14.1...v0.14.2) (2026-08-06)
+
+
+### Bug Fixes
+
+* **review-round:** idempotent, non-destructive review re-request (unwedges [#35](https://github.com/jwulf/urban-pr-review/issues/35) class) ([#47](https://github.com/jwulf/urban-pr-review/issues/47)) ([7b9a391](https://github.com/jwulf/urban-pr-review/commit/7b9a391119be748344852ebb562cee39be6da8c9)), closes [#48](https://github.com/jwulf/urban-pr-review/issues/48)
+
 ## [0.14.1](https://github.com/jwulf/urban-pr-review/compare/v0.14.0...v0.14.1) (2026-08-06)
 
 
