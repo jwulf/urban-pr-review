@@ -220,6 +220,12 @@ export interface PrState {
   mergeStateStatus: string;
   failingChecks: number;
   failingCheckNames: string[];
+  /** Total head check runs of any state (pending/failed/passed). `0` = no run exists at all (the
+   * frugal-CI stuck state the fresh-head-run remedy targets); `-1` when the transport can't
+   * enumerate checks (token mode). */
+  totalChecks: number;
+  /** Whether the PR is a draft (a fresh head run is produced by marking it ready, not reopen). */
+  isDraft: boolean;
 }
 
 /** Map GitHub's REST `mergeable_state` (lower-case) onto the GraphQL `mergeStateStatus`
@@ -263,13 +269,14 @@ export async function fetchPrState(
       "--repo",
       repo,
       "--json",
-      "state,mergedAt,mergeStateStatus,statusCheckRollup",
+      "state,mergedAt,mergeStateStatus,statusCheckRollup,isDraft",
     ]);
     const j = JSON.parse(out) as {
       state?: string;
       mergedAt?: string | null;
       mergeStateStatus?: string;
       statusCheckRollup?: RollupEntry[];
+      isDraft?: boolean;
     };
     const rollup = j.statusCheckRollup ?? [];
     const names = failingCheckNames(rollup);
@@ -278,6 +285,8 @@ export async function fetchPrState(
       mergeStateStatus: (j.mergeStateStatus || "UNKNOWN").toUpperCase(),
       failingChecks: names.length,
       failingCheckNames: names,
+      totalChecks: rollup.length,
+      isDraft: !!j.isDraft,
     };
   }
   if (!token) return null;
@@ -285,7 +294,7 @@ export async function fetchPrState(
     headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
   });
   if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
-  const j = (await r.json()) as { merged?: boolean; merged_at?: string | null; mergeable_state?: string };
+  const j = (await r.json()) as { merged?: boolean; merged_at?: string | null; mergeable_state?: string; draft?: boolean };
   return {
     // The single-PR GET returns a `merged` boolean (unlike the list endpoint); we also honour
     // `merged_at` so this mirrors the gh branch's `state === "MERGED" || mergedAt` rule.
@@ -293,6 +302,8 @@ export async function fetchPrState(
     mergeStateStatus: normalizeMergeState(j.mergeable_state ?? "unknown"),
     failingChecks: -1, // REST here doesn't enumerate checks → classifier treats BLOCKED as "wait"
     failingCheckNames: [], // …and the CI-fix agent gets no per-check list in token mode
+    totalChecks: -1, // …and the fresh-head-run remedy stays conservative (never reopens blind)
+    isDraft: !!j.draft,
   };
 }
 
@@ -381,4 +392,90 @@ export async function mergePr(
   }
   const detail = `github ${r.status} ${r.statusText}: ${(await r.text()).slice(0, 300)}`.trim();
   return { outcome: "blocked", detail };
+}
+
+// ── Merge-protocol execution helpers (issue #43) ────────────────────────────
+// Two capabilities the frugal-CI + on-demand-queue landing protocol needs, on top of the plain
+// `gh pr merge` above: (a) read an arbitrary file from the target repo to discover its published
+// merge protocol, and (b) produce a fresh head `pull_request` run + enqueue via a comment.
+
+/** Read a text file from the *target* repo (default branch) via the configured transport, or
+ * `null` when it doesn't exist / no transport is usable. Used to discover a repo's published
+ * merge-protocol descriptor (see app/mergeProtocol.ts). Never throws on a 404 — a repo without
+ * the file simply has no descriptor. */
+export async function fetchRepoFile(
+  repo: string,
+  path: string,
+  token: string,
+): Promise<string | null> {
+  const apiPath = `repos/${repo}/contents/${path}`;
+  if (await useGh()) {
+    try {
+      return await runGh(["api", apiPath, "-H", "Accept: application/vnd.github.raw"]);
+    } catch {
+      return null; // 404 / not found → no descriptor
+    }
+  }
+  if (!token) return null;
+  const r = await fetch(`https://api.github.com/${apiPath}`, {
+    headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github.raw" },
+  });
+  if (!r.ok) return null;
+  return await r.text();
+}
+
+/** Produce a fresh head `pull_request` run so branch protection has a run to count. `ready` marks
+ * a draft ready (`gh pr ready`); `reopen` closes then reopens the PR (the `reopened` event fires a
+ * fresh run). gh transport only — headless token mode can't reliably drive these, so it no-ops
+ * (the poller then simply keeps waiting, i.e. today's behaviour). Best-effort: resolves even on
+ * failure so a transient error never wedges the merge-loop. */
+export async function ensureFreshHeadRun(
+  repo: string,
+  number: number | string,
+  action: "ready" | "reopen",
+): Promise<boolean> {
+  if (!(await useGh())) return false;
+  const n = String(number);
+  try {
+    if (action === "ready") {
+      await runGh(["pr", "ready", n, "--repo", repo]);
+    } else {
+      await runGh(["pr", "close", n, "--repo", repo]);
+      await runGh(["pr", "reopen", n, "--repo", repo]);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Post a comment on the PR (e.g. `@mergifyio queue`) to enqueue it in the repo's merge queue.
+ * gh transport shells out; token mode posts an issue comment via REST. Returns whether the
+ * comment was accepted. */
+export async function enqueueViaComment(
+  repo: string,
+  number: number | string,
+  token: string,
+  comment: string,
+): Promise<boolean> {
+  const n = String(number);
+  if (await useGh()) {
+    try {
+      await runGh(["pr", "comment", n, "--repo", repo, "--body", comment]);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  if (!token) return false;
+  const r = await fetch(`https://api.github.com/repos/${repo}/issues/${n}/comments`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      accept: "application/vnd.github+json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ body: comment }),
+  });
+  return r.ok;
 }

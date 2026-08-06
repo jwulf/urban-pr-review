@@ -33,6 +33,15 @@ the PR's checks yourself (`gh pr checks`, `gh run view`).
    demand — do not refactor unrelated code.
 4. Run the relevant check locally to confirm it now passes.
 5. Commit (sign off with `-s` if the repo enforces DCO) and push to the branch.
+6. **Make CI re-validate your fix.** Some repos deliberately run CI only when a
+   PR is *opened* (to keep review cheap), so a follow-up push does **not**
+   re-run the checks — your fix would sit unverified and the merge would stay
+   blocked. Before returning, **read the repo's merge protocol** — a
+   ` ```merge-protocol ` block in `AGENTS.md`, else the `## Merging PRs` section
+   of `AGENTS.md` / `CONTRIBUTING.md` / `MERGING.md` — and follow it. If it says
+   pushes don't re-run CI, produce a fresh head run as documented (typically
+   `gh pr ready` for a draft, or close+reopen), so a fresh `pull_request` run
+   validates your fix.
 
 ## Return contract
 
