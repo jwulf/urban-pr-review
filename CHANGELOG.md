@@ -1,3 +1,11 @@
+## [0.14.1](https://github.com/jwulf/urban-pr-review/compare/v0.14.0...v0.14.1) (2026-08-06)
+
+
+### Bug Fixes
+
+* **plan-fanout:** keep template tokens out of XML comments ([#40](https://github.com/jwulf/urban-pr-review/issues/40)) ([46cad5a](https://github.com/jwulf/urban-pr-review/commit/46cad5a97dfb2fec0efbadf1514fe3cc75121775))
+* **review:** give agents the exact Copilot review-request command ([#45](https://github.com/jwulf/urban-pr-review/issues/45)) ([2fda65c](https://github.com/jwulf/urban-pr-review/commit/2fda65c7bf924d8273c1104453f5b5512afb4e05)), closes [Magikcraft/nano-bpm#610](https://github.com/Magikcraft/nano-bpm/issues/610)
+
 # [0.14.0](https://github.com/jwulf/urban-pr-review/compare/v0.13.0...v0.14.0) (2026-08-06)
 
 
