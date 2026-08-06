@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS rounds (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   pr_key     TEXT NOT NULL REFERENCES pull_requests(pr_key),
   round_no   INTEGER NOT NULL,
-  status     TEXT,                          -- converged | addressed | needs_input | blocked
+  status     TEXT,                          -- converged | addressed | waiting | needs_input | blocked
   summary    TEXT,
   started_at TEXT NOT NULL,
   ended_at   TEXT

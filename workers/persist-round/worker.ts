@@ -1,5 +1,6 @@
-// pr.persist-round — records an "addressed" round and parks the PR in `waiting_review` so the
-// poller starts watching for the next review.
+// pr.persist-round — records a completed round (an `addressed` round where the agent pushed
+// changes, or a `waiting` round where there was nothing to triage yet) and parks the PR in
+// `waiting_review` so the poller starts watching for / soliciting the next review.
 //
 // Data access goes through the injected app datasource gateway (`app.data.table<T>`), the RAD
 // `Table<T>` surface — `rounds.insert(...)` / `pull_requests.update(...)`, not hand-written SQL.
@@ -23,8 +24,8 @@ function transcriptOf(vars: Record<string, unknown>): string | null {
 }
 
 const handler: AppJobHandler<In> = async (job, app) => {
-  // This worker is the "addressed" path, so `status` resolves to that domain value.
-  // `summary` is left undefined when absent: the write boundary omits it so the
+  // This worker is the "addressed"/"waiting" path, so `status` resolves to one of those
+  // domain values. `summary` is left undefined when absent: the write boundary omits it so the
   // nullable `rounds.summary` column stays NULL rather than being coerced to "".
   const { prKey, round, status = "addressed", summary } = job.variables;
   const now = new Date().toISOString();

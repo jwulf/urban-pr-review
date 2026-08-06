@@ -70,25 +70,17 @@ Because several agents may run on the same host at once:
    # Resolve the thread whose databaseId matched the comment you handled:
    gh api graphql -f query='mutation($id:ID!){resolveReviewThread(input:{threadId:$id}){thread{isResolved}}}' -F id=THREAD_NODE_ID
    ```
-6. **Re-request review** from Copilot so a fresh review lands (this is what the
-   Nano poller waits for). Request it with the REST reviewers endpoint and the
-   **exact** `[bot]` login — this is the only method that works:
-
-   ```sh
-   gh api repos/OWNER/REPO/pulls/PR/requested_reviewers -X POST \
-     -f 'reviewers[]=copilot-pull-request-reviewer[bot]'
-   ```
-
-   **Never gate this on `suggestedReviewers` / `suggestedActors`, and never
-   escalate merely because Copilot is absent from them.** Those lists resolve
-   *Users*, so the Copilot **bot** is routinely absent even on repos where it
-   reviews fine — its absence there is **expected and not a blocker**. The REST
-   POST above still succeeds. (Likewise `gh pr edit --add-reviewer Copilot`, the
-   bare `Copilot` login, and the GraphQL `requestReviews` mutation all silently
-   no-op — only the REST call above works.) Copilot is genuinely unavailable
-   **only** if that REST POST returns HTTP 422; if it does, say so explicitly in
-   your escalation — do not report "Copilot can't be requested" for any other
-   reason.
+6. **Do NOT request, re-request, or remove the reviewer yourself.** Keeping
+   Copilot attached is the **process's** job: a deterministic poller ensures a
+   Copilot review is requested (idempotently) whenever this PR is waiting, and it
+   is the *only* actor that should touch reviewer membership. You just **push your
+   commits** (step 3) — that is what triggers a fresh review of your changes. Never
+   run `gh api .../requested_reviewers` (POST *or* DELETE) or
+   `gh pr edit --add-reviewer/--remove-reviewer`: adding races the poller, and
+   deleting a pending request cancels an in-flight review (GitHub then debounces
+   the re-add, so no review ever lands and this process wedges). If there is no
+   review yet, that is expected — return `waiting` (see below) and let the process
+   solicit one.
 7. **Clean up.** Before returning, remove anything you created outside the commit so
    host mode does not leak resources: `git worktree remove` any worktree you added,
    delete scratch branches/clones/checkouts, and remove temp/scratch files and build
@@ -105,6 +97,21 @@ Consider the PR **converged** when the latest review has no actionable comment:
 - Copilot is looping — reiterating a point you already addressed or pushed back
   on (two rounds of the same substantive point = converged).
 
+### No review has landed yet — return `waiting`, do NOT escalate
+
+A PR is **not** converged merely because there are zero reviews and zero
+comments. On the first round (or whenever Copilot's review is still pending)
+there is simply nothing to triage *yet*. In that case:
+
+- Do **not** touch reviewer membership (see step 6) — the process's poller
+  solicits the review for you.
+- Return **`waiting`** with a `summary` noting you are awaiting the review. The
+  process durably waits for the review to land (and has its own timeout that
+  escalates a genuinely stalled review for you).
+
+Only return `blocked`/`needs_input` for a real external blocker or a real human
+decision — never because a requested review simply hasn't arrived yet.
+
 ## Return value (job result variables)
 
 Return **one** of:
@@ -112,7 +119,8 @@ Return **one** of:
 | `status`      | when                                                          | also set        |
 |---------------|---------------------------------------------------------------|-----------------|
 | `converged`   | nothing actionable left (see above)                           | `summary`       |
-| `addressed`   | you made changes + pushed + re-requested review this round    | `summary`       |
+| `addressed`   | you made changes + pushed this round                          | `summary`       |
+| `waiting`     | nothing to triage yet — you are awaiting a pending review (typically round 1) | `summary` |
 | `needs_input` | you hit a decision only a human can make                      | `summary`, `question` |
 | `blocked`     | you are stuck on something external (auth, failing push, missing secret) | `summary`, `question` |
 
