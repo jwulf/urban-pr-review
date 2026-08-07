@@ -245,6 +245,21 @@
                 { "field": "body", "header": "Note" },
                 { "field": "created_at", "header": "Posted" }
               ]
+            },
+            {
+              "title": "Reported changes",
+              "source": "app",
+              "table": "plan_task_deltas",
+              "parentField": "plan_key",
+              "childField": "plan_key",
+              "orderBy": { "field": "id", "dir": "asc" },
+              "columns": [
+                { "field": "task_id", "header": "Task" },
+                { "field": "contract_change", "header": "Contract change" },
+                { "field": "newly_touches", "header": "Newly touches" },
+                { "field": "affects_tasks", "header": "Affects tasks" },
+                { "field": "constraint_note", "header": "Constraint" }
+              ]
             }
           ],
           "form": {

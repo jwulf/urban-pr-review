@@ -15,11 +15,14 @@
 import type { AppJobHandler } from "@nanobpm/urban";
 import { type PlanTask, planTaskDeps, planTasks, plans } from "../../app/plan.ts";
 import { parsePr, submitPr } from "../../app/service.ts";
+import { parseTaskDelta, recordTaskDelta } from "../../app/taskDelta.ts";
+import { appendEntry } from "../../app/blackboard.ts";
 
 interface Result {
   status?: unknown;
   summary?: unknown;
   pr?: unknown;
+  delta?: unknown;
 }
 interface WaveTaskIn {
   id?: unknown;
@@ -97,6 +100,46 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
         row.pr_key = parsed.prKey;
       }
       await taskTable.update(row.id, patch);
+    }
+
+    // D5 (issue #55): capture the agent's structured scope/impl-change delta, then broadcast the
+    // file/constraint facts onto the D4 coordination blackboard so later waves + the operator see
+    // them (and D2 conflict-scan can consume them). Both are best-effort and idempotent — a failed
+    // or retried delta write must never fail the wave. `recordTaskDelta` upserts per (plan, task);
+    // the blackboard posts are dedupe-keyed, so a worker retry is a no-op.
+    const delta = parseTaskDelta(res.delta);
+    if (delta) {
+      try {
+        await recordTaskDelta(app.data, planKey, taskId, delta, { wave: currentWave });
+        if (delta.newlyTouches.length > 0) {
+          const why = delta.contractChange ?? delta.constraint ??
+            `${taskId} now also edits ${delta.newlyTouches.join(", ")}`;
+          await appendEntry(app.data, planKey, {
+            author_task: taskId,
+            kind: "file-claim",
+            files: delta.newlyTouches,
+            body: why,
+            wave: currentWave,
+            dedupe_key: `delta:${taskId}:touch`,
+          });
+        }
+        const constraintBody = [delta.contractChange, delta.constraint].filter(Boolean).join(" — ");
+        if (constraintBody) {
+          await appendEntry(app.data, planKey, {
+            author_task: taskId,
+            kind: "constraint-change",
+            body: delta.affectsTasks.length
+              ? `${constraintBody} (affects: ${delta.affectsTasks.join(", ")})`
+              : constraintBody,
+            wave: currentWave,
+            dedupe_key: `delta:${taskId}:constraint`,
+          });
+        }
+      } catch (err) {
+        app.log("error", `record-wave: recording delta for ${taskId} failed`, {
+          err: String(err),
+        });
+      }
     }
 
     // Handoff: enroll each opened PR into the convergence loop. Best-effort — a failed handoff

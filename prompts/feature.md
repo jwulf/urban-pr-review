@@ -94,3 +94,39 @@ Rules:
 - `question` — required when `status` is `escalated`: the specific decision you
   need from a human.
 - `summary` — a short human-readable result.
+
+## Report what changed — the `delta` (optional, but do it when it's true)
+
+You are one of several agents on a shared epic. If your implementation **diverged
+from your brief** in a way that could affect a sibling — you changed a shared
+contract, discovered a constraint that redirects another task, edited a file
+outside your slice, or realised your work impacts specific other tasks — record it
+in an optional `delta` object alongside your result. The fleet aggregates these
+into one epic report, and the file/constraint facts are broadcast to the shared
+[coordination blackboard](#) so your siblings and the operator learn about them
+without reading your PR:
+
+```json
+{
+  "status": "opened",
+  "summary": "…",
+  "pr": "owner/repo#456",
+  "delta": {
+    "contractChange": "restructured complete_adhoc_tool to take {name, args}",
+    "newlyTouches": ["engine/state.rs"],
+    "affectsTasks": ["gap-8"],
+    "constraint": "tool jobs now inherit the results:[] seed"
+  }
+}
+```
+
+Every `delta` field is optional; omit `delta` entirely when your work stayed
+inside its slice. Use:
+
+- `contractChange` — you changed a shared API / contract others build on.
+- `newlyTouches` — paths you edited **beyond** your original slice (these become
+  `file-claim`s on the blackboard, warning siblings off a shared surface).
+- `affectsTasks` — ids of other tasks your change impacts.
+- `constraint` — a constraint you discovered that changes another task's direction.
+
+This is advisory context, not an escalation — it never blocks you or anyone else.
