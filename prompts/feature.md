@@ -103,7 +103,7 @@ contract, discovered a constraint that redirects another task, edited a file
 outside your slice, or realised your work impacts specific other tasks — record it
 in an optional `delta` object alongside your result. The fleet aggregates these
 into one epic report, and the file/constraint facts are broadcast to the shared
-[coordination blackboard](#) so your siblings and the operator learn about them
+coordination blackboard so your siblings and the operator learn about them
 without reading your PR:
 
 ```json

@@ -99,7 +99,11 @@ const exclusionTable = (data: DataLayer) =>
   data.table<MergeExclusionRow>("plan_merge_exclusions", "id");
 
 /** Upsert derived edges for a plan: one row per unordered pair, `files` refreshed in place on a
- * re-scan. Idempotent — re-running the scan never duplicates a pair. */
+ * re-scan. Idempotent — re-running the scan never duplicates a pair. Existing pairs are preloaded
+ * with a single `find({plan_key})` into an in-memory map (keyed by the normalised pair) so a dense
+ * wave costs O(edges) writes instead of an `await findOne(...)` round-trip per edge (worst-case
+ * O(n²) queries). Newly inserted ids are folded back into the map so a duplicate pair in the same
+ * batch updates rather than inserts twice. */
 export async function recordExclusions(
   data: DataLayer,
   planKey: string,
@@ -109,16 +113,21 @@ export async function recordExclusions(
   const ts = now();
   let inserted = 0;
   let updated = 0;
+  const key = (a: string, b: string) => `${a}\u0000${b}`;
+  const byPair = new Map<string, number>();
+  for (const r of await table.find({ plan_key: planKey })) {
+    byPair.set(key(r.task_a, r.task_b), r.id);
+  }
   for (const e of edges) {
     const pair = normalizePair(e.taskA, e.taskB);
     if (!pair) continue;
     const files = e.files.length ? JSON.stringify(e.files) : null;
-    const existing = await table.findOne({ plan_key: planKey, task_a: pair[0], task_b: pair[1] });
-    if (existing) {
-      await table.update(existing.id, { files, source: e.source, updated_at: ts });
+    const existingId = byPair.get(key(pair[0], pair[1]));
+    if (existingId !== undefined) {
+      await table.update(existingId, { files, source: e.source, updated_at: ts });
       updated++;
     } else {
-      await table.insert({
+      const id = await table.insert({
         plan_key: planKey,
         task_a: pair[0],
         task_b: pair[1],
@@ -127,6 +136,7 @@ export async function recordExclusions(
         created_at: ts,
         updated_at: ts,
       });
+      byPair.set(key(pair[0], pair[1]), Number(id));
       inserted++;
     }
   }

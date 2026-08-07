@@ -77,8 +77,12 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     depsByTask.set(d.task_id, list);
   }
 
-  // The tasks that opened a PR in THIS wave — the concurrently-open set the D2 conflict-scan runs
-  // over (cross-wave pairs are moot: the wave barrier merges earlier waves before later ones start).
+  // The tasks with a concurrently-open PR in THIS wave — the set the D2 conflict-scan runs over
+  // (cross-wave pairs are moot: the wave barrier merges earlier waves before later ones start).
+  // This includes both `opened` PRs (also handed off below) AND `escalated` tasks' work-preserving
+  // DRAFT PRs (feature.md): a draft's changed files can still overlap a sibling's, so omitting it
+  // would silently under-approximate the merge-exclusion graph (the scan is a deliberate
+  // over-approximation). Escalated drafts are scanned but NEVER handed off (not ready for review).
   const openedThisWave: { taskId: string; repo: string; number: number | string }[] = [];
 
   for (let i = 0; i < waveTasks.length; i++) {
@@ -148,11 +152,20 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
       }
     }
 
+    // Include this task's PR in the D2 conflict-scan set when it is concurrently open in the wave:
+    // an `opened` PR (also handed off below), OR an `escalated` task's work-preserving DRAFT PR
+    // (feature.md — `status: "escalated"` may carry the draft `pr` it opened to preserve work).
+    // The draft's changed files can overlap a sibling's, so scanning it keeps the merge-exclusion
+    // graph a conservative over-approximation instead of silently missing those overlaps.
+    const scanPr = parsed ?? (rawStatus === "escalated" && prRef ? parsePr(prRef) : null);
+    if (scanPr) {
+      openedThisWave.push({ taskId, repo: scanPr.repo, number: scanPr.number });
+    }
     // Handoff: enroll each opened PR into the convergence loop. Best-effort — a failed handoff
     // must not fail the wave; the PR is recorded and can be resubmitted. `submitPr` is idempotent
     // on prKey (a PR already converging is a no-op), so a retry of this worker won't double-start.
+    // Only `opened` PRs are handed off — an escalated draft is not yet ready for review.
     if (parsed) {
-      openedThisWave.push({ taskId, repo: parsed.repo, number: parsed.number });
       const depPrKeys: string[] = [];
       for (const depTaskId of depsByTask.get(taskId) ?? []) {
         const depRow = byTaskId.get(depTaskId);

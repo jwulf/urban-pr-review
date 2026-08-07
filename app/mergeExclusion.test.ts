@@ -109,6 +109,20 @@ Deno.test("recordExclusions: upserts per unordered pair — a re-scan refreshes 
   assertEquals(edge.files, ["a.rs", "b.rs"], "files refreshed in place");
 });
 
+Deno.test("recordExclusions: a duplicate pair within one batch folds into an update, never a second row", async () => {
+  const { data, stores } = memData();
+  // The same unordered pair appears twice in one call (second given in the other order + more files).
+  // The in-memory map must fold the newly inserted id back so the second occurrence updates in place.
+  const res = await recordExclusions(data, "p", [
+    { taskA: "a", taskB: "b", files: ["x.rs"], source: "file-overlap" },
+    { taskA: "b", taskB: "a", files: ["x.rs", "y.rs"], source: "file-overlap" },
+  ]);
+  assertEquals(res, { inserted: 1, updated: 1 });
+  assertEquals(stores["plan_merge_exclusions"].length, 1, "exactly one row for the pair");
+  const [edge] = await readExclusions(data, "p");
+  assertEquals(edge.files, ["x.rs", "y.rs"], "later occurrence refreshed files in place");
+});
+
 Deno.test("clearExclusions: drops one plan's graph, leaving others intact", async () => {
   const { data } = memData();
   await recordExclusions(data, "p", deriveExclusions(new Map([["a", ["x"]], ["b", ["x"]]])));

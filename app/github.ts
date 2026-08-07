@@ -323,7 +323,8 @@ export async function fetchPrFiles(
   if (!token) return null;
   const paths: string[] = [];
   // Cap the paging so a freak huge PR can't spin the scan; 5×100 files is far past any real slice.
-  for (let page = 1; page <= 5; page++) {
+  const MAX_PAGES = 5;
+  for (let page = 1; page <= MAX_PAGES; page++) {
     const r = await fetch(
       `https://api.github.com/repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`,
       { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" } },
@@ -331,7 +332,18 @@ export async function fetchPrFiles(
     if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
     const batch = (await r.json()) as { filename?: string }[];
     for (const f of batch) if (f.filename) paths.push(f.filename);
-    if (batch.length < 100) break;
+    // A short final page means we've read every file — the list is complete.
+    if (batch.length < 100) return paths;
+    // A full page on the last allowed page is only truncated if GitHub says there's more. Trust the
+    // `Link` header's `rel="next"` rather than page size, so an exact multiple of 100 (e.g. exactly
+    // 500 files, no next page) is returned as complete instead of throwing a false positive. When
+    // the cap genuinely truncates, throw so the caller can log-and-skip rather than recording
+    // exclusions from an incomplete (under-approximated) file set that could miss real overlaps.
+    if (page === MAX_PAGES && /<[^>]*>;\s*rel="next"/.test(r.headers.get("link") ?? "")) {
+      throw new Error(
+        `github pr files truncated: ${repo}#${number} exceeds ${MAX_PAGES * 100}-file paging cap`,
+      );
+    }
   }
   return paths;
 }
