@@ -13,7 +13,7 @@ The job payload (stdin JSON) carries:
 ## What to do
 
 1. Clone or check out `variables.repo` at its default branch in scratch local state.
-2. Fetch each PR head from `waveOpenHeads` (prefer `headSha`, otherwise `headRef`/PR ref).
+2. Fetch each current PR head from `waveOpenHeads`. Resolve the PR/head ref again on every run or rerun; use any provided `headSha` only as an initial identity hint, not as proof the head is still current.
 3. Trial-merge the heads into a throwaway local branch/ref. **Never push. Never open a PR.**
 4. If the heads do not merge textually, stop and report `merge-conflict` with the conflicting PR pair(s)/files you can identify. Textual conflicts are D2/D6's job; do not escalate them as semantic failures.
 5. If the heads merge cleanly, infer the repository's normal combined test command from CI workflows, package manifests, Makefile, or equivalent project docs. The app does not provide a test command.
