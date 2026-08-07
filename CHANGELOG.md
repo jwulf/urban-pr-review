@@ -1,3 +1,10 @@
+# [0.22.0](https://github.com/jwulf/urban-pr-review/compare/v0.21.0...v0.22.0) (2026-08-07)
+
+
+### Features
+
+* **merge:** serialize same-lane landings (D6) ([#68](https://github.com/jwulf/urban-pr-review/issues/68)) ([581d402](https://github.com/jwulf/urban-pr-review/commit/581d402c40ee43102a86a09d3e8c085eceb8c199)), closes [#67](https://github.com/jwulf/urban-pr-review/issues/67) [#49](https://github.com/jwulf/urban-pr-review/issues/49)
+
 # [0.21.0](https://github.com/jwulf/urban-pr-review/compare/v0.20.0...v0.21.0) (2026-08-07)
 
 
