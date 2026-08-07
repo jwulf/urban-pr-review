@@ -205,17 +205,7 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
   // D3 trial-merge gate (issue #69): expose the concurrently-open READY PR heads for the BPMN
   // agent step, and decide whether to dispatch it at all. Single-head waves are just ordinary PR
   // CI, and Mergify queue repos already perform their own batch trial merge, so both skip.
-  const waveOpenHeads: TrialMergeHead[] = await Promise.all(readyHeadsThisWave.map(async (h) => {
-    const head: TrialMergeHead = { repo: h.repo, prNumber: h.number };
-    try {
-      const meta = await fetchPrHead(h.repo, h.number, process.env.GITHUB_TOKEN ?? "");
-      if (meta?.headRef) head.headRef = meta.headRef;
-      if (meta?.headSha) head.headSha = meta.headSha;
-    } catch (err) {
-      app.log("error", `record-wave: pr head fetch failed for ${h.repo}#${h.number}`, { err: String(err) });
-    }
-    return head;
-  }));
+  let waveOpenHeads: TrialMergeHead[] = readyHeadsThisWave.map((h) => ({ repo: h.repo, prNumber: h.number }));
   const stillPendingCurrentWave = (await taskTable.find({ plan_key: planKey }))
     .some((t) => (t.wave ?? 0) === currentWave && t.status === "pending");
   let runTrialMerge = false;
@@ -225,6 +215,16 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
   } else if (waveOpenHeads.length < 2) {
     trialMergeSkipReason = "fewer-than-two-open-heads";
   } else {
+    waveOpenHeads = await Promise.all(waveOpenHeads.map(async (head) => {
+      try {
+        const meta = await fetchPrHead(head.repo, head.prNumber, process.env.GITHUB_TOKEN ?? "");
+        if (meta?.headRef) head.headRef = meta.headRef;
+        if (meta?.headSha) head.headSha = meta.headSha;
+      } catch (err) {
+        app.log("error", `record-wave: pr head fetch failed for ${head.repo}#${head.prNumber}`, { err: String(err) });
+      }
+      return head;
+    }));
     const repo = waveOpenHeads[0]?.repo ?? planKey.split("#")[0];
     const protocol = await loadMergeProtocol(repo, process.env.GITHUB_TOKEN ?? "");
     runTrialMerge = shouldRunTrialMerge(waveOpenHeads.length, protocol);
