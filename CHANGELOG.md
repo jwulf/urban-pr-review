@@ -1,3 +1,10 @@
+# [0.16.0](https://github.com/jwulf/urban-pr-review/compare/v0.15.0...v0.16.0) (2026-08-07)
+
+
+### Features
+
+* **coordination:** epic blackboard — Tier 2 midflight coordination ([#54](https://github.com/jwulf/urban-pr-review/issues/54)) ([c873b63](https://github.com/jwulf/urban-pr-review/commit/c873b6309721d0e66d5be5c87d2a6df9896bf391)), closes [#52](https://github.com/jwulf/urban-pr-review/issues/52) [51/#53](https://github.com/jwulf/urban-pr-review/issues/53) [#42](https://github.com/jwulf/urban-pr-review/issues/42) [#53](https://github.com/jwulf/urban-pr-review/issues/53)
+
 # [0.15.0](https://github.com/jwulf/urban-pr-review/compare/v0.14.3...v0.15.0) (2026-08-07)
 
 
