@@ -190,7 +190,7 @@ export async function readBlackboardPage(
   opts: { since?: number } = {},
 ): Promise<BlackboardPage> {
   const rows = await blackboardTable(data).find({ plan_key: planKey });
-  const cursor = rows.reduce((max, r) => (r.id > max ? r.id : max), opts.since ?? 0);
+  const cursor = rows.reduce((max, r) => (r.id > max ? r.id : max), 0);
   const since = opts.since ?? 0;
   const entries = rows
     .filter((r) => r.id > since)
@@ -235,7 +235,7 @@ export async function detectFileClaimConflicts(
   const out: ClaimConflict[] = [];
   for (const r of rows.slice().sort((a, b) => a.id - b.id)) {
     if ((r.author_task || "") === me) continue;
-    for (const f of decodeFiles(r.files)) {
+    for (const f of decodeFiles(r.files).map((x) => x.trim()).filter((x) => x !== "")) {
       if (want.has(f)) {
         out.push({ file: f, author_task: r.author_task, id: r.id, body: r.body, created_at: r.created_at });
       }
