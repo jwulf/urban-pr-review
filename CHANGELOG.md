@@ -1,3 +1,10 @@
+# [0.20.0](https://github.com/jwulf/urban-pr-review/compare/v0.19.0...v0.20.0) (2026-08-07)
+
+
+### Features
+
+* **merge:** reapply merge protocol on every landing attempt (D9) ([#66](https://github.com/jwulf/urban-pr-review/issues/66)) ([5bb4291](https://github.com/jwulf/urban-pr-review/commit/5bb42914589ad138afc5270b56af155b5ab2f4fb))
+
 # [0.19.0](https://github.com/jwulf/urban-pr-review/compare/v0.18.0...v0.19.0) (2026-08-07)
 
 
