@@ -359,6 +359,26 @@ export async function fetchPrFiles(
   return paths;
 }
 
+/** The PR head ref/sha for D3's trial-merge gate. `null` when no transport is usable. */
+export async function fetchPrHead(
+  repo: string,
+  number: number | string,
+  token: string,
+): Promise<{ headRef: string | null; headSha: string | null } | null> {
+  if (await useGh()) {
+    const out = await runGh(["pr", "view", String(number), "--repo", repo, "--json", "headRefName,headRefOid"]);
+    const j = JSON.parse(out) as { headRefName?: string | null; headRefOid?: string | null };
+    return { headRef: j.headRefName ?? null, headSha: j.headRefOid ?? null };
+  }
+  if (!token) return null;
+  const r = await fetch(`https://api.github.com/repos/${repo}/pulls/${number}`, {
+    headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
+  });
+  if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
+  const j = (await r.json()) as { head?: { ref?: string | null; sha?: string | null } };
+  return { headRef: j.head?.ref ?? null, headSha: j.head?.sha ?? null };
+}
+
 /** The PR's current base branch ref — the branch this PR would land *into*. `null` when no
  * transport is usable (idle). Used by the dead-end-base guard (#60) so we never land a PR into a
  * base that has itself already merged to the default branch. */

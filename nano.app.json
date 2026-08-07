@@ -64,6 +64,10 @@
       "handler": "workers/record-wave/worker.ts"
     },
     {
+      "taskType": "pr.record-trial-merge",
+      "handler": "workers/record-trial-merge/worker.ts"
+    },
+    {
       "taskType": "pr.record-results",
       "handler": "workers/record-results/worker.ts"
     },

@@ -18,11 +18,6 @@
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="senior:plan" />
         <zeebe:taskHeaders>
-          <!-- Base prompt: prompts/plan.md, injected into the header below at deploy time.
-               (The template token lives on the header value, NOT in this comment — a token in a
-               comment gets substituted too, ballooning the comment and risking XML corruption if
-               the prompt contains a double-hyphen sequence, which is illegal inside an XML
-               comment.) -->
           <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{plan}}" />
         </zeebe:taskHeaders>
         <zeebe:ioMapping>
@@ -44,9 +39,6 @@
       <bpmn:extensionElements>
         <zeebe:taskDefinition type="senior:plan-review" />
         <zeebe:taskHeaders>
-          <!-- Base prompt: prompts/plan-review.md, injected into the header below at deploy time.
-               No dynamic suffix: the reviewer reads the recorded plan from the repo. (Keep the
-               template token on the header value only, never in a comment — see the plan task.) -->
           <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{plan-review}}" />
         </zeebe:taskHeaders>
       </bpmn:extensionElements>
@@ -98,9 +90,6 @@
         <bpmn:extensionElements>
           <zeebe:taskDefinition type="senior:feature" />
           <zeebe:taskHeaders>
-            <!-- Base prompt: prompts/feature.md, injected into the header below at deploy time.
-                 The per-task brief is appended verbatim via appendPrompt below. (Keep the template
-                 token on the header value only, never in a comment — see the plan task.) -->
             <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{feature}}" />
           </zeebe:taskHeaders>
           <zeebe:ioMapping>
@@ -145,10 +134,64 @@
         <zeebe:taskDefinition type="pr.record-wave" />
       </bpmn:extensionElements>
       <bpmn:incoming>f_toRecordWave</bpmn:incoming>
-      <bpmn:outgoing>f_toMore</bpmn:outgoing>
+      <bpmn:outgoing>f_toTrialNeeded</bpmn:outgoing>
     </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="gw-trial-needed" name="trial merge?" default="f_skipTrialMerge">
+      <bpmn:incoming>f_toTrialNeeded</bpmn:incoming>
+      <bpmn:outgoing>f_runTrialMerge</bpmn:outgoing>
+      <bpmn:outgoing>f_skipTrialMerge</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="trial-merge" name="Trial merge (agent)">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="senior:trial-merge" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="io.nanobpm.agentTask.task.prompt" value="{{trial-merge}}" />
+        </zeebe:taskHeaders>
+        <zeebe:ioMapping>
+          <zeebe:input source="=null" target="result" />
+          <zeebe:input source="=null" target="conflicts" />
+          <zeebe:input source="=null" target="failing" />
+          <zeebe:input source="=null" target="summary" />
+          <zeebe:input source="=null" target="answer" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_runTrialMerge</bpmn:incoming>
+      <bpmn:incoming>f_trialAnswerRerun</bpmn:incoming>
+      <bpmn:outgoing>f_toRecordTrialMerge</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="record-trial-merge" name="Record trial merge">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pr.record-trial-merge" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_toRecordTrialMerge</bpmn:incoming>
+      <bpmn:outgoing>f_toGwTrial</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:exclusiveGateway id="gw-trial" name="trial red?" default="f_trialProceed">
+      <bpmn:incoming>f_toGwTrial</bpmn:incoming>
+      <bpmn:outgoing>f_trialEscalate</bpmn:outgoing>
+      <bpmn:outgoing>f_trialProceed</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:serviceTask id="persist-trial-escalation" name="Record trial escalation">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="pr.persist-task-escalation" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_trialEscalate</bpmn:incoming>
+      <bpmn:outgoing>f_toWaitTrial</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:intermediateCatchEvent id="wait-trial-answer" name="Wait: trial answer">
+      <bpmn:incoming>f_toWaitTrial</bpmn:incoming>
+      <bpmn:outgoing>f_toGwTrialAnswer</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="med_trialAnswered" messageRef="Message_featureEscalationAnswered" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:exclusiveGateway id="gw-trial-answer" name="proceed override?" default="f_trialAnswerRerun">
+      <bpmn:incoming>f_toGwTrialAnswer</bpmn:incoming>
+      <bpmn:outgoing>f_trialAnswerProceed</bpmn:outgoing>
+      <bpmn:outgoing>f_trialAnswerRerun</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
     <bpmn:exclusiveGateway id="gw-more" name="more waves?" default="f_done">
-      <bpmn:incoming>f_toMore</bpmn:incoming>
+      <bpmn:incoming>f_skipTrialMerge</bpmn:incoming>
+      <bpmn:incoming>f_trialProceed</bpmn:incoming>
+      <bpmn:incoming>f_trialAnswerProceed</bpmn:incoming>
       <bpmn:outgoing>f_moreWaves</bpmn:outgoing>
       <bpmn:outgoing>f_done</bpmn:outgoing>
     </bpmn:exclusiveGateway>
@@ -178,7 +221,23 @@
     <bpmn:sequenceFlow id="f_plan_revise" name="revise" sourceRef="gw-plan-review" targetRef="plan" />
     <bpmn:sequenceFlow id="f_toImplement" sourceRef="select-wave" targetRef="implement" />
     <bpmn:sequenceFlow id="f_toRecordWave" sourceRef="implement" targetRef="record-wave" />
-    <bpmn:sequenceFlow id="f_toMore" sourceRef="record-wave" targetRef="gw-more" />
+    <bpmn:sequenceFlow id="f_toTrialNeeded" sourceRef="record-wave" targetRef="gw-trial-needed" />
+    <bpmn:sequenceFlow id="f_runTrialMerge" name="run" sourceRef="gw-trial-needed" targetRef="trial-merge">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=runTrialMerge</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_skipTrialMerge" name="skip" sourceRef="gw-trial-needed" targetRef="gw-more" />
+    <bpmn:sequenceFlow id="f_toRecordTrialMerge" sourceRef="trial-merge" targetRef="record-trial-merge" />
+    <bpmn:sequenceFlow id="f_toGwTrial" sourceRef="record-trial-merge" targetRef="gw-trial" />
+    <bpmn:sequenceFlow id="f_trialEscalate" name="suite failed" sourceRef="gw-trial" targetRef="persist-trial-escalation">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=trialMergeRed</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_trialProceed" name="proceed" sourceRef="gw-trial" targetRef="gw-more" />
+    <bpmn:sequenceFlow id="f_toWaitTrial" sourceRef="persist-trial-escalation" targetRef="wait-trial-answer" />
+    <bpmn:sequenceFlow id="f_toGwTrialAnswer" sourceRef="wait-trial-answer" targetRef="gw-trial-answer" />
+    <bpmn:sequenceFlow id="f_trialAnswerProceed" name="proceed" sourceRef="gw-trial-answer" targetRef="gw-more">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=answer = "proceed"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_trialAnswerRerun" name="rerun" sourceRef="gw-trial-answer" targetRef="trial-merge" />
     <bpmn:sequenceFlow id="f_moreWaves" name="more" sourceRef="gw-more" targetRef="wait-wave-merged">
       <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=hasMoreWaves</bpmn:conditionExpression>
     </bpmn:sequenceFlow>
@@ -221,25 +280,58 @@
       <bpmndi:BPMNShape id="BPMNShape_record-wave" bpmnElement="record-wave">
         <dc:Bounds x="2268" y="200" width="100" height="80" />
       </bpmndi:BPMNShape>
-      <bpmndi:BPMNShape id="BPMNShape_gw-more" bpmnElement="gw-more" isMarkerVisible="true">
+      <bpmndi:BPMNShape id="BPMNShape_gw-trial-needed" bpmnElement="gw-trial-needed" isMarkerVisible="true">
         <dc:Bounds x="2468" y="215" width="50" height="50" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2451" y="196" width="84" height="14" />
+          <dc:Bounds x="2449" y="196" width="88" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_trial-merge" bpmnElement="trial-merge">
+        <dc:Bounds x="2618" y="360" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_record-trial-merge" bpmnElement="record-trial-merge">
+        <dc:Bounds x="2818" y="360" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_gw-trial" bpmnElement="gw-trial" isMarkerVisible="true">
+        <dc:Bounds x="3018" y="375" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3073" y="393" width="71" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_persist-trial-escalation" bpmnElement="persist-trial-escalation">
+        <dc:Bounds x="3168" y="520" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_wait-trial-answer" bpmnElement="wait-trial-answer">
+        <dc:Bounds x="3368" y="542" width="36" height="36" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3345" y="583" width="82" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_gw-trial-answer" bpmnElement="gw-trial-answer" isMarkerVisible="true">
+        <dc:Bounds x="3504" y="535" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3559" y="546" width="67" height="28" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="BPMNShape_gw-more" bpmnElement="gw-more" isMarkerVisible="true">
+        <dc:Bounds x="3654" y="215" width="50" height="50" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3637" y="196" width="84" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_wait-wave-merged" bpmnElement="wait-wave-merged">
-        <dc:Bounds x="2650" y="382" width="36" height="36" />
+        <dc:Bounds x="3836" y="382" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2629" y="349" width="78" height="28" />
+          <dc:Bounds x="3815" y="349" width="78" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_record-results" bpmnElement="record-results">
-        <dc:Bounds x="2618" y="200" width="100" height="80" />
+        <dc:Bounds x="3804" y="200" width="100" height="80" />
       </bpmndi:BPMNShape>
       <bpmndi:BPMNShape id="BPMNShape_End" bpmnElement="End">
-        <dc:Bounds x="2818" y="222" width="36" height="36" />
+        <dc:Bounds x="4004" y="222" width="36" height="36" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2799" y="263" width="74" height="28" />
+          <dc:Bounds x="3985" y="263" width="74" height="28" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNShape>
       <bpmndi:BPMNEdge id="BPMNEdge_f_toPlan" bpmnElement="f_toPlan">
@@ -277,28 +369,99 @@
         <di:waypoint x="2168" y="240" />
         <di:waypoint x="2268" y="240" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="BPMNEdge_f_toMore" bpmnElement="f_toMore">
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toTrialNeeded" bpmnElement="f_toTrialNeeded">
         <di:waypoint x="2368" y="240" />
         <di:waypoint x="2468" y="240" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="BPMNEdge_f_done" bpmnElement="f_done">
+      <bpmndi:BPMNEdge id="BPMNEdge_f_skipTrialMerge" bpmnElement="f_skipTrialMerge">
         <di:waypoint x="2518" y="240" />
-        <di:waypoint x="2618" y="240" />
+        <di:waypoint x="3654" y="240" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2552" y="218" width="32" height="14" />
+          <dc:Bounds x="2765" y="218" width="32" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_done" bpmnElement="f_done">
+        <di:waypoint x="3704" y="240" />
+        <di:waypoint x="3804" y="240" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3748" y="218" width="32" height="14" />
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_f_toEnd" bpmnElement="f_toEnd">
-        <di:waypoint x="2718" y="240" />
-        <di:waypoint x="2818" y="240" />
+        <di:waypoint x="3904" y="240" />
+        <di:waypoint x="4004" y="240" />
       </bpmndi:BPMNEdge>
-      <bpmndi:BPMNEdge id="BPMNEdge_f_moreWaves" bpmnElement="f_moreWaves">
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toRecordTrialMerge" bpmnElement="f_toRecordTrialMerge">
+        <di:waypoint x="2718" y="400" />
+        <di:waypoint x="2818" y="400" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toGwTrial" bpmnElement="f_toGwTrial">
+        <di:waypoint x="2918" y="400" />
+        <di:waypoint x="3018" y="400" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_trialProceed" bpmnElement="f_trialProceed">
+        <di:waypoint x="3043" y="375" />
+        <di:waypoint x="3043" y="240" />
+        <di:waypoint x="3654" y="240" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3048" y="301" width="53" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_trialAnswerRerun" bpmnElement="f_trialAnswerRerun">
+        <di:waypoint x="3529" y="585" />
+        <di:waypoint x="3529" y="620" />
+        <di:waypoint x="2668" y="620" />
+        <di:waypoint x="2668" y="440" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3079" y="598" width="39" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_runTrialMerge" bpmnElement="f_runTrialMerge">
         <di:waypoint x="2493" y="265" />
         <di:waypoint x="2493" y="400" />
-        <di:waypoint x="2650" y="400" />
+        <di:waypoint x="2618" y="400" />
         <bpmndi:BPMNLabel>
-          <dc:Bounds x="2498" y="326" width="35" height="14" />
+          <dc:Bounds x="2498" y="326" width="25" height="14" />
         </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_trialEscalate" bpmnElement="f_trialEscalate">
+        <di:waypoint x="3043" y="425" />
+        <di:waypoint x="3043" y="560" />
+        <di:waypoint x="3168" y="560" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3048" y="486" width="85" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_trialAnswerProceed" bpmnElement="f_trialAnswerProceed">
+        <di:waypoint x="3529" y="535" />
+        <di:waypoint x="3529" y="385" />
+        <di:waypoint x="3679" y="385" />
+        <di:waypoint x="3679" y="265" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3578" y="363" width="53" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_moreWaves" bpmnElement="f_moreWaves">
+        <di:waypoint x="3704" y="240" />
+        <di:waypoint x="3724" y="240" />
+        <di:waypoint x="3724" y="265" />
+        <di:waypoint x="3758" y="265" />
+        <di:waypoint x="3758" y="420" />
+        <di:waypoint x="3836" y="420" />
+        <di:waypoint x="3836" y="438" />
+        <di:waypoint x="3854" y="438" />
+        <di:waypoint x="3854" y="418" />
+        <bpmndi:BPMNLabel>
+          <dc:Bounds x="3763" y="336" width="35" height="14" />
+        </bpmndi:BPMNLabel>
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toWaitTrial" bpmnElement="f_toWaitTrial">
+        <di:waypoint x="3268" y="560" />
+        <di:waypoint x="3368" y="560" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="BPMNEdge_f_toGwTrialAnswer" bpmnElement="f_toGwTrialAnswer">
+        <di:waypoint x="3404" y="560" />
+        <di:waypoint x="3504" y="560" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_f_plan_revise" bpmnElement="f_plan_revise">
         <di:waypoint x="1041" y="215" />
@@ -310,9 +473,9 @@
         </bpmndi:BPMNLabel>
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNEdge id="BPMNEdge_f_waveMerged" bpmnElement="f_waveMerged">
-        <di:waypoint x="2668" y="418" />
-        <di:waypoint x="2668" y="438" />
-        <di:waypoint x="1216" y="438" />
+        <di:waypoint x="3854" y="418" />
+        <di:waypoint x="3854" y="640" />
+        <di:waypoint x="1216" y="640" />
         <di:waypoint x="1216" y="280" />
       </bpmndi:BPMNEdge>
       <bpmndi:BPMNShape id="BPMNShape_w_start" bpmnElement="w_start">
