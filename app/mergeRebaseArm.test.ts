@@ -18,7 +18,7 @@ const bpmn = await Deno.readTextFile("resources/processes/merge-loop.bpmn");
 const flat = bpmn.replace(/\s+/g, " ");
 
 // A `<sequenceFlow>` whose source/target match, regardless of attribute order or an inline
-// conditionExpression child. Returns the raw element (opening tag) if present.
+// conditionExpression child. Returns true if such a flow is present.
 function hasFlow(source: string, target: string): boolean {
   const re = new RegExp(
     `<bpmn:sequenceFlow\\b[^>]*\\bsourceRef="${source}"[^>]*\\btargetRef="${target}"|` +
