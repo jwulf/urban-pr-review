@@ -1,8 +1,9 @@
 // Contract for the per-repo merge protocol (#43): the descriptor parser must be total (any
 // malformed/partial input degrades to DEFAULT_MERGE_PROTOCOL, never throws), the AGENTS.md block
 // extractor must find the fenced ```merge-protocol JSON, and the fresh-head-run decision must fire
-// exactly once — only in the frugal-CI stuck state (no head run + waiting) — so a converged PR is
-// nudged into a fresh CI run without disturbing a run already in flight. Run with `deno test -A`.
+// exactly once per landing attempt — only in the frugal-CI stuck state (no head run + waiting) —
+// so a converged PR is nudged into a fresh CI run without disturbing a run already in flight.
+// Run with `deno test -A`.
 import { assertEquals } from "jsr:@std/assert@1";
 import {
   DEFAULT_MERGE_PROTOCOL,
@@ -81,11 +82,26 @@ const NANO: MergeProtocol = parseMergeProtocol({
   land: { method: "mergify-queue" },
 });
 
-Deno.test("freshHeadRunAction: fires once in the frugal-CI stuck state (no run + waiting)", () => {
+Deno.test("freshHeadRunAction: fires in the frugal-CI stuck state (no run + waiting)", () => {
   // ready PR, no head run at all → reopen (ready-or-reopen, not a draft)
   assertEquals(freshHeadRunAction(NANO, "waiting", 0, false), "reopen");
   // draft PR, no head run → mark ready
   assertEquals(freshHeadRunAction(NANO, "waiting", 0, true), "ready");
+});
+
+Deno.test("freshHeadRunAction: fires once per landing-attempt head, then re-fires after rebase", () => {
+  assertEquals(
+    freshHeadRunAction(NANO, "waiting", 0, false, { headRefOid: "h1", lastActionHeadRefOid: null }),
+    "reopen",
+  );
+  assertEquals(
+    freshHeadRunAction(NANO, "waiting", 0, false, { headRefOid: "h1", lastActionHeadRefOid: "h1" }),
+    null,
+  );
+  assertEquals(
+    freshHeadRunAction(NANO, "waiting", 0, false, { headRefOid: "h2", lastActionHeadRefOid: "h1" }),
+    "reopen",
+  );
 });
 
 Deno.test("freshHeadRunAction: never fires once a run exists, or when not waiting", () => {
@@ -93,6 +109,7 @@ Deno.test("freshHeadRunAction: never fires once a run exists, or when not waitin
   assertEquals(freshHeadRunAction(NANO, "waiting", -1, false), null); // token mode (unknown) → conservative
   assertEquals(freshHeadRunAction(NANO, "ready", 0, false), null); // already landable
   assertEquals(freshHeadRunAction(NANO, "blocked", 0, false), null); // failed check → fix-ci arm
+  assertEquals(freshHeadRunAction(NANO, "blocked", 0, false, { headRefOid: "h2", lastActionHeadRefOid: "h1" }), null);
   assertEquals(freshHeadRunAction(NANO, "conflict", 0, false), null); // conflict → rebase arm (#42)
 });
 

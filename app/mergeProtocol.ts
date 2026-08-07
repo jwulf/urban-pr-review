@@ -151,24 +151,35 @@ export async function loadMergeProtocol(repo: string, token: string): Promise<Me
   return protocol;
 }
 
+export interface FreshHeadRunAttempt {
+  /** Current PR head commit. A rebase produces a new value, which starts a new landing attempt. */
+  headRefOid?: string | null;
+  /** Head commit for which this landing attempt already produced a synthetic run. */
+  lastActionHeadRefOid?: string | null;
+}
+
 /** Whether the merge poller should produce a synthetic fresh head run *now*, and how.
  *
  * Fires only when the protocol asks for a fresh run AND the PR currently has **no head check run
  * at all** (`totalChecks === 0`) while GitHub still reports it un-landable-but-not-conflicting
  * (`waiting`). That is exactly the frugal-CI stuck state: review converged, the last push produced
- * no run, so branch protection's required checks read as *expected* forever. Once a run exists
- * (`totalChecks > 0`, pending or done) this returns `null`, so the poller never re-triggers — the
- * synthetic run happens at most once per merge-loop, and a genuinely-failing check (`blocked`) is
- * left to the fix-ci arm, a conflict (`conflict`) to the rebase arm (#42). */
+ * no run, so branch protection's required checks read as *expected* forever. Once a run exists for
+ * the current head (`totalChecks > 0`, pending or done), or this same head already got its nudge,
+ * this returns `null`, so the poller never re-triggers inside one landing attempt. A rebase changes
+ * `headRefOid`, so the decision is re-derived and can fire again for the fresh post-rebase head.
+ * A genuinely-failing check (`blocked`) is left to the fix-ci arm, a conflict (`conflict`) to the
+ * rebase arm (#42). */
 export function freshHeadRunAction(
   protocol: MergeProtocol,
   verdict: "ready" | "waiting" | "conflict" | "blocked",
   totalChecks: number,
   isDraft: boolean,
+  attempt: FreshHeadRunAttempt = {},
 ): "ready" | "reopen" | null {
   if (protocol.freshHeadRun === "none") return null;
   if (verdict !== "waiting") return null; // ready = go land; blocked/conflict = other arms
   if (totalChecks !== 0) return null; // a run already exists (or unknown in token mode) → wait
+  if (attempt.headRefOid && attempt.headRefOid === attempt.lastActionHeadRefOid) return null;
   switch (protocol.freshHeadRun) {
     case "ready":
       return isDraft ? "ready" : null;

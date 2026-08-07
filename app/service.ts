@@ -120,6 +120,9 @@ interface PullRequest {
   // review for this PR, so the nudge is throttled to one attempt per REVIEW_NUDGE_MS window.
   // NULL means never nudged.
   last_nudge_at: string | null;
+  // Merge-protocol liveness (012_merge_protocol_attempt.sql): head commit last nudged by the
+  // frugal-CI fresh-head-run remedy. A rebase changes the head and therefore permits a new nudge.
+  fresh_head_run_head: string | null;
 }
 
 interface PrDependency {
@@ -595,15 +598,21 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
         // Frugal-CI remedy (#43): when the repo publishes a merge protocol that wants a fresh
         // head run and the PR has NO head run at all, review has converged but the last push
         // produced no CI run — so branch protection's required checks read as "expected" forever
-        // and this PR would wait indefinitely. Produce a fresh `pull_request` run once (mark ready
-        // / close+reopen); `freshHeadRunAction` returns null once any run exists, so this fires at
-        // most once and never disturbs a run that's already in flight.
+        // and this PR would wait indefinitely. Produce a fresh `pull_request` run once per head
+        // (mark ready / close+reopen); rebases change `headRefOid`, so downstream merge-train PRs
+        // get a new nudge after every post-rebase landing attempt.
         const protocol = await loadMergeProtocol(repo, token).catch(() => null);
         if (protocol) {
-          const action = freshHeadRunAction(protocol, verdict, st.totalChecks, st.isDraft);
+          const action = freshHeadRunAction(protocol, verdict, st.totalChecks, st.isDraft, {
+            headRefOid: st.headRefOid,
+            lastActionHeadRefOid: pr.fresh_head_run_head,
+          });
           if (action) {
             const ok = await ensureFreshHeadRun(repo, number, action).catch(() => false);
-            console.log(`[poller] fresh head run (${action}) ${ok ? "produced" : "skipped"} -> ${prKey}`);
+            if (ok && st.headRefOid) {
+              await prs(data).update(prKey, { fresh_head_run_head: st.headRefOid, updated_at: now() });
+            }
+            console.log(`[poller] fresh head run (${action}) ${ok ? "requested" : "skipped"} -> ${prKey}`);
           }
         }
         continue; // GitHub still computing / checks pending
@@ -799,4 +808,3 @@ export async function pollOnce(
   await pollWaveGates(data, engine, token);
   if (engineRest) await pollJobActivation(data, engineRest.restAddress, engineRest.token);
 }
-

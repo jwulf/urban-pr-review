@@ -226,6 +226,8 @@ export interface PrState {
   totalChecks: number;
   /** Whether the PR is a draft (a fresh head run is produced by marking it ready, not reopen). */
   isDraft: boolean;
+  /** Current head commit. Used to scope one-shot merge-protocol nudges to a landing attempt. */
+  headRefOid: string | null;
 }
 
 /** Map GitHub's REST `mergeable_state` (lower-case) onto the GraphQL `mergeStateStatus`
@@ -269,7 +271,7 @@ export async function fetchPrState(
       "--repo",
       repo,
       "--json",
-      "state,mergedAt,mergeStateStatus,statusCheckRollup,isDraft",
+      "state,mergedAt,mergeStateStatus,statusCheckRollup,isDraft,headRefOid",
     ]);
     const j = JSON.parse(out) as {
       state?: string;
@@ -277,6 +279,7 @@ export async function fetchPrState(
       mergeStateStatus?: string;
       statusCheckRollup?: RollupEntry[];
       isDraft?: boolean;
+      headRefOid?: string | null;
     };
     const rollup = j.statusCheckRollup ?? [];
     const names = failingCheckNames(rollup);
@@ -287,6 +290,7 @@ export async function fetchPrState(
       failingCheckNames: names,
       totalChecks: rollup.length,
       isDraft: !!j.isDraft,
+      headRefOid: j.headRefOid ?? null,
     };
   }
   if (!token) return null;
@@ -294,7 +298,13 @@ export async function fetchPrState(
     headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
   });
   if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
-  const j = (await r.json()) as { merged?: boolean; merged_at?: string | null; mergeable_state?: string; draft?: boolean };
+  const j = (await r.json()) as {
+    merged?: boolean;
+    merged_at?: string | null;
+    mergeable_state?: string;
+    draft?: boolean;
+    head?: { sha?: string | null };
+  };
   return {
     // The single-PR GET returns a `merged` boolean (unlike the list endpoint); we also honour
     // `merged_at` so this mirrors the gh branch's `state === "MERGED" || mergedAt` rule.
@@ -304,6 +314,7 @@ export async function fetchPrState(
     failingCheckNames: [], // …and the CI-fix agent gets no per-check list in token mode
     totalChecks: -1, // …and the fresh-head-run remedy stays conservative (never reopens blind)
     isDraft: !!j.draft,
+    headRefOid: j.head?.sha ?? null,
   };
 }
 
