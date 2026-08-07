@@ -561,12 +561,15 @@ async function mergeLaneDecisionForPr(data: DataLayer, prKey: string): Promise<P
   if (edges.length === 0) return null;
   const lanes = mergeLanes(edges, laneTasks);
   const lanePrKeys = new Set([...taskToPr.values()]);
-  const mergedPrKeys = new Set<string>();
-  for (const pr of await prs(data).all()) {
-    if (lanePrKeys.has(pr.pr_key) && pr.status === "merged") mergedPrKeys.add(pr.pr_key);
+  const completedPrKeys = new Set<string>();
+  for (const lanePrKey of lanePrKeys) {
+    const lanePr = await prs(data).get(lanePrKey);
+    if (lanePr && (lanePr.status === "merged" || lanePr.status === "abandoned")) {
+      completedPrKeys.add(lanePr.pr_key);
+    }
   }
   const depths = taskDependencyDepths(await planTaskDeps(data).find({ plan_key: planKey }));
-  return planPrLane(lanes, taskToPr, mergedPrKeys, prKey, depths);
+  return planPrLane(lanes, taskToPr, completedPrKeys, prKey, depths);
 }
 
 async function mirrorTaskStatusForPr(data: DataLayer, prKey: string, status: "opened" | "waiting-for-lane") {
@@ -576,7 +579,7 @@ async function mirrorTaskStatusForPr(data: DataLayer, prKey: string, status: "op
   }
 }
 
-/** Merge-stage poll pass (SPEC §11). Three durable waits, each keyed off the PR's `status`, are
+/** Merge-stage poll pass (SPEC §11). Four durable waits, each keyed off the PR's `status`, are
  * advanced by correlating a message — mirroring the review-ready pattern so the process owns
  * the wait and this glue only signals when a GitHub condition is met:
  *   • waiting_deps  → every declared dependency has merged        → `deps-cleared`

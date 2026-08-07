@@ -27,7 +27,7 @@ export interface TaskDependencyEdge {
 
 /** Compute the same dependency depth used for lane order: roots at 0, dependants at
  * `1 + max(dep depth)`. Cycles should already be rejected by plan review; if stale data contains
- * one, fall back to depth 0 for the cyclic branch rather than wedging the poller. */
+ * one, break the recursive back-edge rather than wedging the poller. */
 export function taskDependencyDepths(edges: readonly TaskDependencyEdge[]): Map<string, number> {
   const depsByTask = new Map<string, string[]>();
   const ids = new Set<string>();
@@ -65,7 +65,8 @@ function compareTaskOrder(
 ): number {
   const da = depthOf(taskDepth, a);
   const db = depthOf(taskDepth, b);
-  return da === db ? a.localeCompare(b) : da - db;
+  if (da !== db) return da - db;
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /** Plan one serial landing lane. Singleton lanes never hold their sole PR; lanes with no unmerged
