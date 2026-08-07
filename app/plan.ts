@@ -10,6 +10,7 @@
 // the process. Data access goes through the record gateway (`data.table`), never
 // hand-written SQL — matching app/service.ts.
 import type { DataLayer, EngineClient } from "@nanobpm/urban";
+import { blackboardUrl, mintBlackboardToken, renderCoordinationBrief } from "./blackboard.ts";
 
 /** The BPMN process this module drives (resources/processes/plan-fanout.bpmn). */
 export const PLAN_PROCESS_ID = "plan-fanout";
@@ -44,6 +45,10 @@ export interface Plan {
   // Wave-merge barrier (007_wave_gate.sql): the wave index whose PRs the plan is currently
   // waiting to see MERGED before dispatching the next wave, or null when not parked at the barrier.
   gate_wave: number | null;
+  // Per-plan capability token for the coordination blackboard (009_plan_blackboard.sql, #51).
+  // Minted at plan start; baked into the blackboard URL handed to implementer agents. NULL for
+  // plans created before the blackboard shipped.
+  blackboard_token: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -176,6 +181,11 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
     return { planKey: parsed.planKey, alreadyRunning: true };
   }
   const ts = now();
+  // Mint (or reuse, on a re-plan) this plan's blackboard capability token, and render the
+  // coordination brief that carries its concrete URL. The token is the credential; agents reach
+  // the blackboard directly with the URL we seed into `appendPrompt` below (#51).
+  const token = existing?.blackboard_token ?? mintBlackboardToken();
+  const bbUrl = blackboardUrl(token);
   if (existing) {
     // Re-plan a previously finished issue: clear the old tasks and start fresh.
     for (const t of await planTasks(data).find({ plan_key: parsed.planKey })) {
@@ -206,6 +216,7 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
       open_task_question: null,
       open_task_corr_key: null,
       open_task_id: null,
+      blackboard_token: token,
       updated_at: ts,
     });
   } else {
@@ -216,6 +227,7 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
       issue_url: parsed.url,
       status: "planning",
       task_count: 0,
+      blackboard_token: token,
       created_at: ts,
       updated_at: ts,
     });
@@ -229,6 +241,12 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
       issueNumber: parsed.number,
       issueUrl: parsed.url,
       planFindings: null,
+      // Coordination blackboard (#51): the capability URL + the protocol brief that each
+      // implementer agent gets appended to its prompt (composed into `appendPrompt` in
+      // plan-fanout.bpmn's implement-task). Advisory shared state, delivered in-band, used
+      // out-of-band.
+      blackboardUrl: bbUrl,
+      blackboardBrief: renderCoordinationBrief(bbUrl),
     },
   });
   if (processInstanceKey != null) {

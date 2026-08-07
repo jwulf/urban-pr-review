@@ -113,6 +113,10 @@
     {
       "path": "/hooks/feature-answer",
       "module": "actions/feature-answer-hook.ts"
+    },
+    {
+      "path": "/hooks/blackboard",
+      "module": "actions/blackboard.ts"
     }
   ]
 }
