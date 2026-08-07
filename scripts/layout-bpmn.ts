@@ -52,7 +52,7 @@ async function main() {
     ? (g.Deno?.args ?? process.argv.slice(2))
     : await defaultProcessFiles();
   if (files.length === 0) {
-    console.error("usage: layout-bpmn <file.bpmn> [more.bpmn ...]");
+    console.error("usage: layout-bpmn [file.bpmn ...] (default: resources/processes/*.bpmn)");
     if (g.Deno) g.Deno && (globalThis as { Deno?: { exit(c: number): never } }).Deno!.exit(2);
     else process.exit(2);
     return;

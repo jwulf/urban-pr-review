@@ -223,15 +223,9 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     trialMergeSkipReason = "fewer-than-two-open-heads";
   } else {
     const repo = waveOpenHeads[0]?.repo ?? planKey.split("#")[0];
-    try {
-      const protocol = await loadMergeProtocol(repo, process.env.GITHUB_TOKEN ?? "");
-      runTrialMerge = shouldRunTrialMerge(waveOpenHeads.length, protocol);
-      if (!runTrialMerge) trialMergeSkipReason = "mergify-queue";
-    } catch (err) {
-      app.log("error", `record-wave: merge protocol fetch failed for ${repo}`, { err: String(err) });
-      runTrialMerge = shouldRunTrialMerge(waveOpenHeads.length, { land: { method: "gh-merge" } });
-      trialMergeSkipReason = runTrialMerge ? undefined : "merge-protocol-unavailable";
-    }
+    const protocol = await loadMergeProtocol(repo, process.env.GITHUB_TOKEN ?? "");
+    runTrialMerge = shouldRunTrialMerge(waveOpenHeads.length, protocol);
+    if (!runTrialMerge) trialMergeSkipReason = "mergify-queue";
   }
 
   // D2 conflict-scan (issue #58): derive the merge-exclusion graph (D1/#57) for this wave's
