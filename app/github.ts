@@ -307,6 +307,35 @@ export async function fetchPrState(
   };
 }
 
+/** The changed file paths of a PR (for the D2 conflict-scan, #58). `gh` returns them directly;
+ * the token transport pages `/pulls/{n}/files` (100/page, capped). Returns `null` when no
+ * transport is usable (idle), an empty array for a PR with no files. */
+export async function fetchPrFiles(
+  repo: string,
+  number: number | string,
+  token: string,
+): Promise<string[] | null> {
+  if (await useGh()) {
+    const out = await runGh(["pr", "view", String(number), "--repo", repo, "--json", "files"]);
+    const j = JSON.parse(out) as { files?: { path?: string }[] };
+    return (j.files ?? []).map((f) => f.path ?? "").filter((p) => p !== "");
+  }
+  if (!token) return null;
+  const paths: string[] = [];
+  // Cap the paging so a freak huge PR can't spin the scan; 5×100 files is far past any real slice.
+  for (let page = 1; page <= 5; page++) {
+    const r = await fetch(
+      `https://api.github.com/repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`,
+      { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" } },
+    );
+    if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
+    const batch = (await r.json()) as { filename?: string }[];
+    for (const f of batch) if (f.filename) paths.push(f.filename);
+    if (batch.length < 100) break;
+  }
+  return paths;
+}
+
 /** A settled landability verdict, or `waiting` when GitHub hasn't determined it yet (or is
  * still running checks / awaiting review). The poller only advances the process on a settled
  * verdict; `waiting` means re-poll later. */

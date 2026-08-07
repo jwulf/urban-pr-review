@@ -15,8 +15,10 @@
 import type { AppJobHandler } from "@nanobpm/urban";
 import { type PlanTask, planTaskDeps, planTasks, plans } from "../../app/plan.ts";
 import { parsePr, submitPr } from "../../app/service.ts";
-import { parseTaskDelta, recordTaskDelta } from "../../app/taskDelta.ts";
+import { parseTaskDelta, readTaskDeltas, recordTaskDelta } from "../../app/taskDelta.ts";
 import { appendEntry } from "../../app/blackboard.ts";
+import { deriveExclusions, recordExclusions } from "../../app/mergeExclusion.ts";
+import { fetchPrFiles } from "../../app/github.ts";
 
 interface Result {
   status?: unknown;
@@ -74,6 +76,10 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     list.push(d.depends_on_task_id);
     depsByTask.set(d.task_id, list);
   }
+
+  // The tasks that opened a PR in THIS wave — the concurrently-open set the D2 conflict-scan runs
+  // over (cross-wave pairs are moot: the wave barrier merges earlier waves before later ones start).
+  const openedThisWave: { taskId: string; repo: string; number: number | string }[] = [];
 
   for (let i = 0; i < waveTasks.length; i++) {
     const taskId = str((waveTasks[i] ?? {}).id);
@@ -146,6 +152,7 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     // must not fail the wave; the PR is recorded and can be resubmitted. `submitPr` is idempotent
     // on prKey (a PR already converging is a no-op), so a retry of this worker won't double-start.
     if (parsed) {
+      openedThisWave.push({ taskId, repo: parsed.repo, number: parsed.number });
       const depPrKeys: string[] = [];
       for (const depTaskId of depsByTask.get(taskId) ?? []) {
         const depRow = byTaskId.get(depTaskId);
@@ -158,6 +165,51 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
           err: String(err),
         });
       }
+    }
+  }
+
+  // D2 conflict-scan (issue #58): derive the merge-exclusion graph (D1/#57) for this wave's
+  // concurrently-open PRs from FILE-OVERLAP — any two that touch the same path can't land
+  // independently. Each task's file set = its reported `newlyTouches` (D5, zero I/O) ∪ its PR's
+  // actual changed files (best-effort via gh/token). Whole block is best-effort + idempotent
+  // (upsert per pair): a transport failure or a retry must never fail the wave.
+  if (openedThisWave.length >= 2) {
+    try {
+      const deltas = await readTaskDeltas(app.data, planKey);
+      const touchesByTask = new Map<string, Set<string>>();
+      const openedIds = new Set(openedThisWave.map((o) => o.taskId));
+      for (const d of deltas) {
+        if (!openedIds.has(d.taskId) || d.newlyTouches.length === 0) continue;
+        touchesByTask.set(d.taskId, new Set(d.newlyTouches));
+      }
+      const token = process.env.GITHUB_TOKEN ?? "";
+      for (const o of openedThisWave) {
+        try {
+          const files = await fetchPrFiles(o.repo, o.number, token);
+          if (!files || files.length === 0) continue;
+          const set = touchesByTask.get(o.taskId) ?? new Set<string>();
+          for (const f of files) set.add(f);
+          touchesByTask.set(o.taskId, set);
+        } catch (err) {
+          app.log("error", `record-wave: pr files fetch failed for ${o.repo}#${o.number}`, {
+            err: String(err),
+          });
+        }
+      }
+      const edges = deriveExclusions(touchesByTask);
+      if (edges.length > 0) {
+        const { inserted, updated } = await recordExclusions(app.data, planKey, edges);
+        app.log("info", `record-wave: merge-exclusion scan wave ${currentWave}`, {
+          planKey,
+          edges: edges.length,
+          inserted,
+          updated,
+        });
+      }
+    } catch (err) {
+      app.log("error", `record-wave: merge-exclusion scan failed for ${planKey}`, {
+        err: String(err),
+      });
     }
   }
 
