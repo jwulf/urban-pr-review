@@ -74,7 +74,7 @@ export async function recordTrialMergeAudit(
   const table = auditTable(data);
   const jobKey = row.jobKey ?? null;
   if (jobKey) {
-    const existing = (await table.find({ job_key: jobKey })).sort((a, b) => b.id - a.id)[0];
+    const existing = (await table.find({ plan_key: row.planKey, job_key: jobKey })).sort((a, b) => b.id - a.id)[0];
     if (existing) {
       await table.update(existing.id, {
         result: row.result,

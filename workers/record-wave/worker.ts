@@ -205,8 +205,7 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
   // D3 trial-merge gate (issue #69): expose the concurrently-open READY PR heads for the BPMN
   // agent step, and decide whether to dispatch it at all. Single-head waves are just ordinary PR
   // CI, and Mergify queue repos already perform their own batch trial merge, so both skip.
-  const waveOpenHeads: TrialMergeHead[] = [];
-  for (const h of readyHeadsThisWave) {
+  const waveOpenHeads: TrialMergeHead[] = await Promise.all(readyHeadsThisWave.map(async (h) => {
     const head: TrialMergeHead = { repo: h.repo, prNumber: h.number };
     try {
       const meta = await fetchPrHead(h.repo, h.number, process.env.GITHUB_TOKEN ?? "");
@@ -215,8 +214,8 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     } catch (err) {
       app.log("error", `record-wave: pr head fetch failed for ${h.repo}#${h.number}`, { err: String(err) });
     }
-    waveOpenHeads.push(head);
-  }
+    return head;
+  }));
   let runTrialMerge = false;
   let trialMergeSkipReason: string | undefined;
   if (waveOpenHeads.length < 2) {
