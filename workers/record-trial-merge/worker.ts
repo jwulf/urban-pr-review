@@ -42,7 +42,8 @@ const safeJson = (v: unknown): string => {
 };
 
 function parseResult(v: unknown): TrialMergeResult {
-  return typeof v === "string" && RESULTS.has(v as TrialMergeResult) ? (v as TrialMergeResult) : "suite-failed";
+  const s = typeof v === "string" ? v.trim() : "";
+  return RESULTS.has(s as TrialMergeResult) ? (s as TrialMergeResult) : "suite-failed";
 }
 
 const handler: AppJobHandler<In, Out> = async (job, app) => {

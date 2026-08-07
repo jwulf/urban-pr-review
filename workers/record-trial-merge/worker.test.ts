@@ -1,5 +1,5 @@
 import { assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
-import handler from "./worker.ts";
+import handler, { parseResult } from "./worker.ts";
 
 function fakeApp() {
   const inserts: Record<string, unknown[]> = { plan_trial_merges: [] };
@@ -39,6 +39,12 @@ Deno.test("record-trial-merge shapes clean results as proceed", async () => {
   assertEquals(inserts.plan_trial_merges.length, 1);
   // deno-lint-ignore no-explicit-any
   assertEquals((inserts.plan_trial_merges[0] as any).result, "clean");
+});
+
+Deno.test("parseResult trims valid agent result strings", () => {
+  assertEquals(parseResult("clean\n"), "clean");
+  assertEquals(parseResult(" merge-conflict "), "merge-conflict");
+  assertEquals(parseResult("unknown"), "suite-failed");
 });
 
 Deno.test("record-trial-merge escalates only suite-failed results", async () => {

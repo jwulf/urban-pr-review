@@ -85,7 +85,7 @@ function installGithubStub(method: "gh-merge" | "mergify-queue") {
     const url = String(input);
     if (url.includes("/contents/AGENTS.md")) {
       if (method === "mergify-queue") {
-        return Promise.resolve(new Response('```merge-protocol\\n{ "land": { "method": "mergify-queue" } }\\n```'));
+        return Promise.resolve(new Response('```merge-protocol\n{ "land": { "method": "mergify-queue" } }\n```'));
       }
       return Promise.resolve(new Response("not found", { status: 404 }));
     }
