@@ -1,3 +1,10 @@
+# [0.18.0](https://github.com/jwulf/urban-pr-review/compare/v0.17.0...v0.18.0) (2026-08-07)
+
+
+### Features
+
+* **coordination:** merge-exclusion graph + file-overlap conflict-scan (D1/D2) ([#59](https://github.com/jwulf/urban-pr-review/issues/59)) ([538ed94](https://github.com/jwulf/urban-pr-review/commit/538ed9448870abd99b5f2d82e14477a6bd299f97))
+
 # [0.17.0](https://github.com/jwulf/urban-pr-review/compare/v0.16.0...v0.17.0) (2026-08-07)
 
 
