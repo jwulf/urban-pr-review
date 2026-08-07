@@ -152,6 +152,7 @@
           <zeebe:input source="=null" target="conflicts" />
           <zeebe:input source="=null" target="failing" />
           <zeebe:input source="=null" target="summary" />
+          <zeebe:input source="=null" target="answer" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
       <bpmn:incoming>f_runTrialMerge</bpmn:incoming>
