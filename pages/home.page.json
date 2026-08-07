@@ -230,6 +230,21 @@
                 { "field": "draft_pr_key", "header": "Draft PR" },
                 { "field": "answer", "header": "Answer" }
               ]
+            },
+            {
+              "title": "Coordination blackboard",
+              "source": "app",
+              "table": "plan_blackboard",
+              "parentField": "plan_key",
+              "childField": "plan_key",
+              "orderBy": { "field": "id", "dir": "asc" },
+              "columns": [
+                { "field": "author_task", "header": "Agent" },
+                { "field": "kind", "header": "Kind" },
+                { "field": "files", "header": "Files" },
+                { "field": "body", "header": "Note" },
+                { "field": "created_at", "header": "Posted" }
+              ]
             }
           ],
           "form": {

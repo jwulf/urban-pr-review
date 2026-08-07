@@ -122,6 +122,72 @@ Deno.test("GET ?since returns only newer entries", async () => {
   assertEquals(tail.body.entries.map((e: { body: string }) => e.body), ["two"]);
 });
 
+Deno.test("GET returns a cursor at the plan head for incremental polling (Tier 2)", async () => {
+  const { app } = memApp();
+  await seedPlan(app, "o/r#1", "tok");
+  await call(app, "POST", { token: "tok" }, { body: "one" });
+  await call(app, "POST", { token: "tok" }, { body: "two" });
+  const all = await call(app, "GET", { token: "tok" });
+  assertEquals(all.body.cursor, all.body.entries[1].id, "cursor is the head id");
+  // Poll from the cursor: caught up, cursor holds.
+  const caughtUp = await call(app, "GET", { token: "tok", since: String(all.body.cursor) });
+  assertEquals(caughtUp.body.entries, []);
+  assertEquals(caughtUp.body.cursor, all.body.cursor);
+});
+
+Deno.test("POST file-claim surfaces a sibling's prior claim as a conflict (advisory)", async () => {
+  const { app } = memApp();
+  await seedPlan(app, "o/r#1", "tok");
+  const first = await call(app, "POST", { token: "tok" }, {
+    author_task: "gap-2",
+    kind: "file-claim",
+    files: ["engine/state.rs"],
+    body: "owns state.rs",
+  });
+  assertEquals(first.body.conflicts, [], "first claimer sees no conflict");
+
+  const second = await call(app, "POST", { token: "tok" }, {
+    author_task: "gap-8",
+    kind: "file-claim",
+    files: ["engine/state.rs"],
+    body: "also needs state.rs",
+  });
+  assertEquals(second.status, 201, "the later claim is still recorded (advisory, not blocked)");
+  assertEquals(second.body.conflicts.length, 1);
+  assertEquals(second.body.conflicts[0].author_task, "gap-2", "reports the first (winning) claimer");
+  assertEquals(second.body.conflicts[0].file, "engine/state.rs");
+});
+
+Deno.test("POST file-claim without author_task does not report the caller's own prior 'system' claim as a conflict", async () => {
+  const { app } = memApp();
+  await seedPlan(app, "o/r#1", "tok");
+  // First claim omits author_task → stored as "system".
+  const first = await call(app, "POST", { token: "tok" }, {
+    kind: "file-claim",
+    files: ["engine/state.rs"],
+    body: "system owns state.rs",
+  });
+  assertEquals(first.body.conflicts, []);
+  // Same anonymous caller claims the same file again. Because author_task normalizes to "system" for
+  // both the append and the conflict detection, the earlier "system" row is the caller's own and must
+  // not be reported as a sibling conflict.
+  const second = await call(app, "POST", { token: "tok" }, {
+    author_task: "   ",
+    kind: "file-claim",
+    files: ["engine/state.rs"],
+    body: "system re-claims state.rs",
+  });
+  assertEquals(second.status, 201);
+  assertEquals(second.body.conflicts, [], "own prior 'system' claim is not a conflict");
+});
+
+Deno.test("POST a non-file-claim carries no conflicts", async () => {
+  const { app } = memApp();
+  await seedPlan(app, "o/r#1", "tok");
+  const res = await call(app, "POST", { token: "tok" }, { author_task: "t", kind: "note", body: "fyi" });
+  assertEquals(res.body.conflicts, []);
+});
+
 Deno.test("unsupported method → 405", async () => {
   const { app } = memApp();
   await seedPlan(app, "o/r#1", "tok");

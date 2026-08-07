@@ -4,11 +4,13 @@ import type { DataLayer } from "@nanobpm/urban";
 import {
   appendEntry,
   blackboardUrl,
+  detectFileClaimConflicts,
   mintBlackboardToken,
   normalizeKind,
   planKeyForToken,
   publicBaseUrl,
   readBlackboard,
+  readBlackboardPage,
   renderCoordinationBrief,
 } from "./blackboard.ts";
 
@@ -99,6 +101,10 @@ Deno.test("renderCoordinationBrief: leads with a separator and teaches the proto
   assertStringIncludes(brief, "author_task");
   assertStringIncludes(brief, "file-claim");
   assertStringIncludes(brief, "dedupe_key");
+  // Tier 2: teaches incremental re-reading via the cursor and reacting to a claim conflict.
+  assertStringIncludes(brief, "cursor");
+  assertStringIncludes(brief, "&since=");
+  assertStringIncludes(brief, "conflicts");
 });
 
 Deno.test("planKeyForToken: resolves a token to its plan, undefined otherwise", async () => {
@@ -120,6 +126,13 @@ Deno.test("appendEntry + readBlackboard: append, encode files, read back in writ
   assertEquals(entries[0].files, ["a.rs"], "files decoded to an array");
   assertEquals(entries[1].files, [], "no files → empty array");
   assertEquals(entries[1].author_task, "gap-8");
+});
+
+Deno.test("appendEntry: trims whitespace-padded file paths so stored/read values are clean", async () => {
+  const { data } = memData();
+  await appendEntry(data, "p", { kind: "file-claim", files: ["  engine/state.rs  ", "\tengine/mine.rs\n"], body: "claims" });
+  const [e] = await readBlackboard(data, "p");
+  assertEquals(e.files, ["engine/state.rs", "engine/mine.rs"], "paths stored trimmed, not whitespace-padded");
 });
 
 Deno.test("appendEntry: a missing author defaults to 'system' and kind is normalised", async () => {
@@ -190,4 +203,93 @@ Deno.test("readBlackboard: since returns only newer entries (incremental poll)",
   const all = await readBlackboard(data, "p");
   const tail = await readBlackboard(data, "p", { since: all[0].id });
   assertEquals(tail.map((e) => e.body), ["two", "three"]);
+});
+
+Deno.test("readBlackboardPage: cursor is the plan head and lets an agent poll to caught-up (Tier 2)", async () => {
+  const { data } = memData();
+  await appendEntry(data, "p", { body: "one" });
+  await appendEntry(data, "p", { body: "two" });
+
+  const first = await readBlackboardPage(data, "p");
+  assertEquals(first.entries.map((e) => e.body), ["one", "two"]);
+  assertEquals(first.cursor, first.entries[1].id, "cursor is the head id");
+
+  // Poll again from the cursor: nothing new, and the cursor holds at the head (not reset to 0).
+  const caughtUp = await readBlackboardPage(data, "p", { since: first.cursor });
+  assertEquals(caughtUp.entries, []);
+  assertEquals(caughtUp.cursor, first.cursor, "a caught-up poll keeps the head cursor");
+
+  // A sibling posts; the next poll from the cursor returns only the new entry and advances.
+  await appendEntry(data, "p", { body: "three" });
+  const next = await readBlackboardPage(data, "p", { since: first.cursor });
+  assertEquals(next.entries.map((e) => e.body), ["three"]);
+  assertEquals(next.cursor, next.entries[0].id);
+});
+
+Deno.test("readBlackboardPage: an empty plan yields no entries and a zero cursor", async () => {
+  const { data } = memData();
+  const page = await readBlackboardPage(data, "empty");
+  assertEquals(page.entries, []);
+  assertEquals(page.cursor, 0);
+});
+
+Deno.test("detectFileClaimConflicts: a sibling's prior claim on the same file is surfaced", async () => {
+  const { data } = memData();
+  await appendEntry(data, "p", { author_task: "gap-2", kind: "file-claim", files: ["engine/state.rs"], body: "owns state.rs" });
+
+  const conflicts = await detectFileClaimConflicts(data, "p", {
+    author_task: "gap-8",
+    files: ["engine/state.rs", "engine/mine.rs"],
+  });
+  assertEquals(conflicts.length, 1, "only the overlapping file is a conflict");
+  assertEquals(conflicts[0].file, "engine/state.rs");
+  assertEquals(conflicts[0].author_task, "gap-2", "reports the first (winning) claimer");
+});
+
+Deno.test("detectFileClaimConflicts: your own prior claim and non-file-claim entries are not conflicts", async () => {
+  const { data } = memData();
+  await appendEntry(data, "p", { author_task: "gap-2", kind: "file-claim", files: ["a.rs"], body: "my earlier claim" });
+  await appendEntry(data, "p", { author_task: "gap-8", kind: "note", files: ["a.rs"], body: "just a note about a.rs" });
+
+  // Re-claiming my own file: no self-conflict, and the sibling's note (not a file-claim) is ignored.
+  assertEquals(
+    await detectFileClaimConflicts(data, "p", { author_task: "gap-2", files: ["a.rs"] }),
+    [],
+  );
+  // No files to claim → nothing to conflict on.
+  assertEquals(await detectFileClaimConflicts(data, "p", { author_task: "gap-9", files: [] }), []);
+});
+
+Deno.test("detectFileClaimConflicts: beforeId restricts to strictly prior claims (insertion order wins)", async () => {
+  const { data } = memData();
+  const prior = await appendEntry(data, "p", {
+    author_task: "gap-2",
+    kind: "file-claim",
+    files: ["a.rs"],
+    body: "prior sibling claim",
+  });
+  const mine = await appendEntry(data, "p", {
+    author_task: "gap-8",
+    kind: "file-claim",
+    files: ["a.rs"],
+    body: "my claim",
+  });
+  const later = await appendEntry(data, "p", {
+    author_task: "gap-9",
+    kind: "file-claim",
+    files: ["a.rs"],
+    body: "sibling that claimed after me",
+  });
+
+  // Computed after my insert, filtered to id < mine: only the strictly-prior sibling is a conflict —
+  // my own row and the later sibling's row are excluded even though both overlap the file.
+  const conflicts = await detectFileClaimConflicts(data, "p", {
+    author_task: "gap-8",
+    files: ["a.rs"],
+    beforeId: Number(mine.id),
+  });
+  assertEquals(conflicts.length, 1);
+  assertEquals(conflicts[0].id, Number(prior.id));
+  assertEquals(conflicts[0].author_task, "gap-2");
+  assert(Number(later.id) > Number(mine.id));
 });
