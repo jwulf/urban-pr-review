@@ -81,13 +81,14 @@
           <zeebe:input source="=null" target="summary" />
           <zeebe:input source="=null" target="pr" />
           <zeebe:input source="=null" target="question" />
+          <zeebe:input source="=null" target="delta" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
       <bpmn:incoming>f_toImplement</bpmn:incoming>
       <bpmn:outgoing>f_toRecordWave</bpmn:outgoing>
       <bpmn:multiInstanceLoopCharacteristics>
         <bpmn:extensionElements>
-          <zeebe:loopCharacteristics inputCollection="=waveTasks" inputElement="task" outputCollection="waveResults" outputElement="={status: status, summary: summary, pr: pr}" />
+          <zeebe:loopCharacteristics inputCollection="=waveTasks" inputElement="task" outputCollection="waveResults" outputElement="={status: status, summary: summary, pr: pr, delta: delta}" />
         </bpmn:extensionElements>
       </bpmn:multiInstanceLoopCharacteristics>
       <bpmn:startEvent id="w_start" name="Task">
