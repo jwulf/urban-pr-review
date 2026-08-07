@@ -1,3 +1,10 @@
+# [0.17.0](https://github.com/jwulf/urban-pr-review/compare/v0.16.0...v0.17.0) (2026-08-07)
+
+
+### Features
+
+* **coordination:** structured scope/impl-change report from implementers ([#55](https://github.com/jwulf/urban-pr-review/issues/55)) ([#56](https://github.com/jwulf/urban-pr-review/issues/56)) ([13b62c2](https://github.com/jwulf/urban-pr-review/commit/13b62c25052e2132ad677fec337dc7b2ca6997d3)), closes [#49](https://github.com/jwulf/urban-pr-review/issues/49) [nano-bpm#614](https://github.com/nano-bpm/issues/614) [#624](https://github.com/jwulf/urban-pr-review/issues/624) [#54](https://github.com/jwulf/urban-pr-review/issues/54)
+
 # [0.16.0](https://github.com/jwulf/urban-pr-review/compare/v0.15.0...v0.16.0) (2026-08-07)
 
 
