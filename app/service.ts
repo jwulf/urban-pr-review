@@ -44,6 +44,12 @@ export const MAX_ROUNDS = clampRounds(process.env.NANO_PR_MAX_ROUNDS, 20);
  * the review-round cap this allows 0 (disable), so it parses directly rather than via clampRounds. */
 export const MAX_CI_FIX_ROUNDS = clampCiFixBudget(process.env.NANO_PR_MAX_CI_FIX_ROUNDS, 3);
 
+/** How many times the merge stage will dispatch a `senior:rebase` agent to bring a conflicting
+ * (moved-base) PR up to date with its base before giving up and escalating to a human. Default 3;
+ * set `NANO_PR_MAX_REBASE_ROUNDS=0` to disable auto-rebase (a conflicting PR escalates
+ * immediately). Reuses the CI-fix budget clamp (allows 0 = disable, ceiling-capped). */
+export const MAX_REBASE_ROUNDS = clampCiFixBudget(process.env.NANO_PR_MAX_REBASE_ROUNDS, 3);
+
 /** How long the convergence loop waits for a fresh review before escalating to a human. Seeded as
  * the `reviewWaitTimeout` process variable at submit and evaluated by the process's
  * `wait-review-timeout` timer catch (the timer arm of the event-based-gateway race against
@@ -302,6 +308,8 @@ export async function startMerge(
       round: pr.round,
       ciFixRound: 0,
       ciFixMax: MAX_CI_FIX_ROUNDS,
+      rebaseRound: 0,
+      rebaseMax: MAX_REBASE_ROUNDS,
     },
   });
   if (processInstanceKey != null) {
