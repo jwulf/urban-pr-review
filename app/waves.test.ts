@@ -95,8 +95,8 @@ Deno.test("duplicate task id → WaveError", () => {
 
 // --- Wave-merge barrier: which PRs must merge for a wave to clear? ---
 // `waveMergeTargets` drives the poller's `wave-merged` gate. It must select exactly the
-// opened-with-a-PR tasks of the gate wave, ignore other waves, and treat blocked/skipped (and
-// keyless "opened") tasks as nothing-to-wait-on so a failed slice can't wedge the barrier forever.
+// opened/waiting-with-a-PR tasks of the gate wave, ignore other waves, and treat blocked/skipped
+// and keyless tasks as nothing-to-wait-on so no non-mergeable PR state can wedge the barrier.
 
 Deno.test("waveMergeTargets → only opened PRs of the gate wave", () => {
   const tasks: WaveGateTask[] = [
@@ -107,14 +107,16 @@ Deno.test("waveMergeTargets → only opened PRs of the gate wave", () => {
   assertEquals(waveMergeTargets(tasks, 0), ["o/r#1", "o/r#2"]);
 });
 
-Deno.test("waveMergeTargets → blocked/skipped/keyless tasks are not waited on", () => {
+Deno.test("waveMergeTargets → mergeable waiting tasks are waited on; failed/keyless tasks are not", () => {
   const tasks: WaveGateTask[] = [
     { wave: 0, status: "opened", pr_key: "o/r#1" },
     { wave: 0, status: "blocked", pr_key: null },
     { wave: 0, status: "skipped", pr_key: null },
+    { wave: 0, status: "waiting-for-lane", pr_key: "o/r#2" },
+    { wave: 0, status: "waiting-for-lane", pr_key: null },
     { wave: 0, status: "opened", pr_key: null }, // opened but no PR key → nothing to merge
   ];
-  assertEquals(waveMergeTargets(tasks, 0), ["o/r#1"]);
+  assertEquals(waveMergeTargets(tasks, 0), ["o/r#1", "o/r#2"]);
 });
 
 Deno.test("waveMergeTargets → a wave with no opened PRs clears vacuously (empty)", () => {
