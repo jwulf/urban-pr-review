@@ -18,10 +18,12 @@ import {
   type MergeMethod,
   requestCopilotReview,
 } from "./github.ts";
-import { planTasks, plans } from "./plan.ts";
+import { planTaskDeps, planTasks, plans } from "./plan.ts";
 import { freshHeadRunAction, loadMergeProtocol } from "./mergeProtocol.ts";
 import { clampNudgeMinutes, reviewWaitTimeout } from "./reviewWait.ts";
 import { waveMergeTargets } from "./waves.ts";
+import { mergeLanes, readExclusions } from "./mergeExclusion.ts";
+import { planPrLane, type PrLaneDecision, taskDependencyDepths } from "./mergeTrain.ts";
 
 /** The BPMN process that drives review convergence (`resources/processes/convergence-loop.bpmn`). */
 export const PROCESS_ID = "convergence-loop";
@@ -86,7 +88,7 @@ export const MERGE_ADMIN = ["1", "true", "on", "yes"].includes(
 const now = () => new Date().toISOString();
 
 /** A PR is "done" in exactly these states; everything else (converging, waiting_review,
- * escalated, and the merge-stage waiting_deps/waiting_merge/queued) is in flight. `converged`
+ * escalated, and the merge-stage waiting_deps/waiting_merge/waiting_lane/queued) is in flight. `converged`
  * is terminal only in review-only mode (AUTO_MERGE off); with auto-merge on, a converged PR
  * transitions into the merge stage and lands as `merged`. The status endpoint and the cancel
  * guard both key off this set. */
@@ -543,11 +545,46 @@ async function flipToMergingThenPublish(
   }
 }
 
-/** Merge-stage poll pass (SPEC §11). Three durable waits, each keyed off the PR's `status`, are
+async function mergeLaneDecisionForPr(data: DataLayer, prKey: string): Promise<PrLaneDecision | null> {
+  const taskRows = await planTasks(data).find({ pr_key: prKey });
+  const task = taskRows[0];
+  if (!task) return null;
+  const planKey = task.plan_key;
+  const allTasks = await planTasks(data).find({ plan_key: planKey });
+  const taskToPr = new Map<string, string>();
+  const laneTasks: string[] = [];
+  for (const t of allTasks) {
+    laneTasks.push(t.task_id);
+    if (t.pr_key) taskToPr.set(t.task_id, t.pr_key);
+  }
+  const edges = await readExclusions(data, planKey);
+  if (edges.length === 0) return null;
+  const lanes = mergeLanes(edges, laneTasks);
+  const lanePrKeys = new Set([...taskToPr.values()]);
+  const completedPrKeys = new Set<string>();
+  for (const lanePrKey of lanePrKeys) {
+    const lanePr = await prs(data).get(lanePrKey);
+    if (lanePr && (lanePr.status === "merged" || lanePr.status === "abandoned")) {
+      completedPrKeys.add(lanePr.pr_key);
+    }
+  }
+  const depths = taskDependencyDepths(await planTaskDeps(data).find({ plan_key: planKey }));
+  return planPrLane(lanes, taskToPr, completedPrKeys, prKey, depths);
+}
+
+async function mirrorTaskStatusForPr(data: DataLayer, prKey: string, status: "opened" | "waiting-for-lane") {
+  const ts = now();
+  for (const t of await planTasks(data).find({ pr_key: prKey })) {
+    await planTasks(data).update(t.id, { status, updated_at: ts });
+  }
+}
+
+/** Merge-stage poll pass (SPEC §11). Four durable waits, each keyed off the PR's `status`, are
  * advanced by correlating a message — mirroring the review-ready pattern so the process owns
  * the wait and this glue only signals when a GitHub condition is met:
  *   • waiting_deps  → every declared dependency has merged        → `deps-cleared`
  *   • waiting_merge → GitHub settled the PR as mergeable/blocked  → `merge-ready` {mergeState}
+ *   • waiting_lane  → predecessor in same exclusion lane merged    → re-arm `waiting_merge`
  *   • queued        → the queued PR has landed on GitHub          → `merge-landed`
  * On publish we flip status to the transient `merging` (which no branch scans) so a slow pass
  * can't double-signal, exactly as `pollReviews` flips to `converging`; `flipToMergingThenPublish`
@@ -617,6 +654,15 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
         }
         continue; // GitHub still computing / checks pending
       }
+      if (verdict === "ready") {
+        const lane = await mergeLaneDecisionForPr(data, prKey);
+        if (lane?.isHeld) {
+          await prs(data).update(prKey, { status: "waiting_lane", updated_at: now() });
+          await mirrorTaskStatusForPr(data, prKey, "waiting-for-lane");
+          console.log(`[poller] merge lane held by ${lane.laneHeadOf ?? "unknown"} -> ${prKey}`);
+          continue;
+        }
+      }
       await flipToMergingThenPublish(data, engine, prKey, "waiting_merge", {
         name: "merge-ready",
         correlationKey: prKey,
@@ -635,7 +681,21 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
     }
   }
 
-  // 3) Queued PR landed?
+  // 3) Lane-held PR released?
+  for (const pr of await prs(data).find({ status: "waiting_lane" })) {
+    const prKey = pr.pr_key;
+    try {
+      const lane = await mergeLaneDecisionForPr(data, prKey);
+      if (lane?.isHeld) continue;
+      await prs(data).update(prKey, { status: "waiting_merge", updated_at: now() });
+      await mirrorTaskStatusForPr(data, prKey, "opened");
+      console.log(`[poller] merge lane released -> ${prKey}`);
+    } catch (err) {
+      console.error(`[poller] lane ${prKey}: ${err}`);
+    }
+  }
+
+  // 4) Queued PR landed?
   for (const pr of await prs(data).find({ status: "queued" })) {
     const { repo, number, pr_key: prKey } = pr;
     try {
