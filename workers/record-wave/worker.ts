@@ -216,9 +216,13 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     }
     return head;
   }));
+  const stillPendingCurrentWave = (await taskTable.find({ plan_key: planKey }))
+    .some((t) => (t.wave ?? 0) === currentWave && t.status === "pending");
   let runTrialMerge = false;
   let trialMergeSkipReason: string | undefined;
-  if (waveOpenHeads.length < 2) {
+  if (stillPendingCurrentWave) {
+    trialMergeSkipReason = "wave-still-pending";
+  } else if (waveOpenHeads.length < 2) {
     trialMergeSkipReason = "fewer-than-two-open-heads";
   } else {
     const repo = waveOpenHeads[0]?.repo ?? planKey.split("#")[0];
@@ -272,8 +276,6 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     }
   }
 
-  const stillPendingCurrentWave = (await taskTable.find({ plan_key: planKey }))
-    .some((t) => (t.wave ?? 0) === currentWave && t.status === "pending");
   const nextWave = stillPendingCurrentWave ? currentWave : currentWave + 1;
   const hasMoreWaves = stillPendingCurrentWave || nextWave < waveCount;
 
