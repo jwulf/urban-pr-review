@@ -41,11 +41,6 @@ const handler: ActionHandler = async ({ req, body }, app) => {
     const kind = normalizeKind(b.kind);
     const files = Array.isArray(b.files) ? b.files.map(String) : [];
     const author_task = typeof b.author_task === "string" ? b.author_task : undefined;
-    // Advisory conflict-of-intent: surface prior sibling claims on the same file(s) before we write
-    // ours (first-writer-wins). Never blocks the append — the agent decides how to react.
-    const conflicts = kind === "file-claim"
-      ? await detectFileClaimConflicts(app.data, planKey, { author_task, files })
-      : [];
     const res = await appendEntry(app.data, planKey, {
       author_task,
       kind,
@@ -54,6 +49,17 @@ const handler: ActionHandler = async ({ req, body }, app) => {
       wave: typeof b.wave === "number" ? b.wave : null,
       dedupe_key: typeof b.dedupe_key === "string" ? b.dedupe_key : undefined,
     });
+    // Advisory conflict-of-intent: surface prior sibling claims on the same file(s). Computed AFTER
+    // the append and filtered to claims strictly before ours (id < res.id), so first-writer-wins is
+    // decided by insertion order — a sibling that raced a claim in between is still caught, and our
+    // own just-written row is never reported. Never blocks the append — the agent decides how to react.
+    const conflicts = kind === "file-claim"
+      ? await detectFileClaimConflicts(app.data, planKey, {
+        author_task,
+        files,
+        beforeId: Number(res.id),
+      })
+      : [];
     return {
       status: res.inserted ? 201 : 200,
       body: { id: Number(res.id), inserted: res.inserted, conflicts },

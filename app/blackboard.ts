@@ -222,18 +222,24 @@ export interface ClaimConflict {
 
 /** Prior `file-claim` entries by OTHER authors on this plan that overlap `files`. Used by the
  * endpoint to surface conflicts on a `file-claim` POST; a writer's own earlier claim is never a
- * conflict with itself. */
+ * conflict with itself. Pass `beforeId` to restrict to strictly prior claims (`id < beforeId`) —
+ * the endpoint computes conflicts AFTER inserting its own claim and sets `beforeId` to that new id,
+ * so first-writer-wins is decided by insertion order and a sibling claim that raced in concurrently
+ * is still surfaced (its row exists by the time we read) without ever matching our own just-written
+ * row. */
 export async function detectFileClaimConflicts(
   data: DataLayer,
   planKey: string,
-  opts: { author_task?: string; files: string[] },
+  opts: { author_task?: string; files: string[]; beforeId?: number },
 ): Promise<ClaimConflict[]> {
   const want = new Set((opts.files ?? []).map((f) => String(f).trim()).filter((s) => s !== ""));
   if (want.size === 0) return [];
   const me = opts.author_task?.trim() || "";
+  const beforeId = opts.beforeId;
   const rows = await blackboardTable(data).find({ plan_key: planKey, kind: "file-claim" });
   const out: ClaimConflict[] = [];
   for (const r of rows.slice().sort((a, b) => a.id - b.id)) {
+    if (beforeId != null && r.id >= beforeId) continue;
     if ((r.author_task || "") === me) continue;
     for (const f of decodeFiles(r.files).map((x) => x.trim()).filter((x) => x !== "")) {
       if (want.has(f)) {

@@ -252,3 +252,37 @@ Deno.test("detectFileClaimConflicts: your own prior claim and non-file-claim ent
   // No files to claim → nothing to conflict on.
   assertEquals(await detectFileClaimConflicts(data, "p", { author_task: "gap-9", files: [] }), []);
 });
+
+Deno.test("detectFileClaimConflicts: beforeId restricts to strictly prior claims (insertion order wins)", async () => {
+  const { data } = memData();
+  const prior = await appendEntry(data, "p", {
+    author_task: "gap-2",
+    kind: "file-claim",
+    files: ["a.rs"],
+    body: "prior sibling claim",
+  });
+  const mine = await appendEntry(data, "p", {
+    author_task: "gap-8",
+    kind: "file-claim",
+    files: ["a.rs"],
+    body: "my claim",
+  });
+  const later = await appendEntry(data, "p", {
+    author_task: "gap-9",
+    kind: "file-claim",
+    files: ["a.rs"],
+    body: "sibling that claimed after me",
+  });
+
+  // Computed after my insert, filtered to id < mine: only the strictly-prior sibling is a conflict —
+  // my own row and the later sibling's row are excluded even though both overlap the file.
+  const conflicts = await detectFileClaimConflicts(data, "p", {
+    author_task: "gap-8",
+    files: ["a.rs"],
+    beforeId: Number(mine.id),
+  });
+  assertEquals(conflicts.length, 1);
+  assertEquals(conflicts[0].id, Number(prior.id));
+  assertEquals(conflicts[0].author_task, "gap-2");
+  assert(Number(later.id) > Number(mine.id));
+});
