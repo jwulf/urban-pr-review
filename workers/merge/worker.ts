@@ -12,6 +12,7 @@ import type { AppJobHandler } from "@nanobpm/urban";
 import { enqueueViaComment, mergePr } from "../../app/github.ts";
 import { MERGE_ADMIN, MERGE_METHOD } from "../../app/service.ts";
 import { loadMergeProtocol } from "../../app/mergeProtocol.ts";
+import { checkBaseTarget } from "../../app/baseGuard.ts";
 
 interface In extends Record<string, unknown> {
   prKey: string;
@@ -29,6 +30,30 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
   const { prKey, repo, prNumber } = job.variables;
   const token = process.env.GITHUB_TOKEN ?? "";
   const now = new Date().toISOString();
+
+  // Dead-end-base guard (#60): never land a PR into a base branch that has itself already merged
+  // to the default branch — the merge would land into a dead branch and never reach `main`.
+  // GitHub only auto-retargets a PR when its base is *deleted* on merge; a merged-but-undeleted
+  // base (typical in a stacked epic) stays the target and reads CLEAN, so nothing else catches it.
+  // Best-effort: a transport hiccup leaves `deadEnd:false`, so this never blocks a valid merge.
+  const guard = await checkBaseTarget(repo, prNumber, token).catch(() => null);
+  if (guard?.deadEnd) {
+    await app.data.table("merges", "id").insert({
+      pr_key: prKey,
+      outcome: "blocked",
+      method: "base-guard",
+      detail: `base '${guard.base}' has already merged into '${guard.defaultBranch}' (dead-end target)`,
+      at: now,
+    });
+    return {
+      mergeStatus: "blocked",
+      status: "blocked",
+      question:
+        `This PR targets '${guard.base}', which has already merged into '${guard.defaultBranch}'. ` +
+        `Merging now would land into a dead-end branch and never reach '${guard.defaultBranch}'. ` +
+        `Retarget it (gh pr edit ${prNumber} --repo ${repo} --base ${guard.defaultBranch}), then reply to retry.`,
+    };
+  }
 
   const protocol = await loadMergeProtocol(repo, token).catch(() => null);
   const method = protocol?.land.method ?? "gh-merge";
