@@ -307,6 +307,47 @@ export async function fetchPrState(
   };
 }
 
+/** The changed file paths of a PR (for the D2 conflict-scan, #58). `gh` returns them directly;
+ * the token transport pages `/pulls/{n}/files` (100/page, capped). Returns `null` when no
+ * transport is usable (idle), an empty array for a PR with no files. */
+export async function fetchPrFiles(
+  repo: string,
+  number: number | string,
+  token: string,
+): Promise<string[] | null> {
+  if (await useGh()) {
+    const out = await runGh(["pr", "view", String(number), "--repo", repo, "--json", "files"]);
+    const j = JSON.parse(out) as { files?: { path?: string }[] };
+    return (j.files ?? []).map((f) => f.path ?? "").filter((p) => p !== "");
+  }
+  if (!token) return null;
+  const paths: string[] = [];
+  // Cap the paging so a freak huge PR can't spin the scan; 5×100 files is far past any real slice.
+  const MAX_PAGES = 5;
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    const r = await fetch(
+      `https://api.github.com/repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`,
+      { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" } },
+    );
+    if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
+    const batch = (await r.json()) as { filename?: string }[];
+    for (const f of batch) if (f.filename) paths.push(f.filename);
+    // A short final page means we've read every file — the list is complete.
+    if (batch.length < 100) return paths;
+    // A full page on the last allowed page is only truncated if GitHub says there's more. Trust the
+    // `Link` header's `rel="next"` rather than page size, so an exact multiple of 100 (e.g. exactly
+    // 500 files, no next page) is returned as complete instead of throwing a false positive. When
+    // the cap genuinely truncates, throw so the caller can log-and-skip rather than recording
+    // exclusions from an incomplete (under-approximated) file set that could miss real overlaps.
+    if (page === MAX_PAGES && /<[^>]*>;\s*rel="next"/.test(r.headers.get("link") ?? "")) {
+      throw new Error(
+        `github pr files truncated: ${repo}#${number} exceeds ${MAX_PAGES * 100}-file paging cap`,
+      );
+    }
+  }
+  return paths;
+}
+
 /** A settled landability verdict, or `waiting` when GitHub hasn't determined it yet (or is
  * still running checks / awaiting review). The poller only advances the process on a settled
  * verdict; `waiting` means re-poll later. */

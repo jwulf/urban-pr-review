@@ -260,6 +260,20 @@
                 { "field": "affects_tasks", "header": "Affects tasks" },
                 { "field": "constraint_note", "header": "Constraint" }
               ]
+            },
+            {
+              "title": "Merge exclusions",
+              "source": "app",
+              "table": "plan_merge_exclusions",
+              "parentField": "plan_key",
+              "childField": "plan_key",
+              "orderBy": { "field": "id", "dir": "asc" },
+              "columns": [
+                { "field": "task_a", "header": "Task A" },
+                { "field": "task_b", "header": "Task B" },
+                { "field": "files", "header": "Shared files" },
+                { "field": "source", "header": "Source" }
+              ]
             }
           ],
           "form": {

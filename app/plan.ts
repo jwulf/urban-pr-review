@@ -12,6 +12,7 @@
 import type { DataLayer, EngineClient } from "@nanobpm/urban";
 import { blackboardUrl, mintBlackboardToken, renderCoordinationBrief } from "./blackboard.ts";
 import { clearTaskDeltas } from "./taskDelta.ts";
+import { clearExclusions } from "./mergeExclusion.ts";
 
 /** The BPMN process this module drives (resources/processes/plan-fanout.bpmn). */
 export const PLAN_PROCESS_ID = "plan-fanout";
@@ -209,6 +210,8 @@ export async function startPlan(data: DataLayer, engine: EngineClient, parsed: P
     // Same for the structured impl-change deltas (D5, #55): keyed on `id`, so drop the prior run's
     // rows one-by-one, otherwise a stale delta lingers in the epic report for a task we just deleted.
     await clearTaskDeltas(data, parsed.planKey);
+    // And the merge-exclusion graph (D1, #57): stale edges would mislead the merge-train.
+    await clearExclusions(data, parsed.planKey);
     await table.update(parsed.planKey, {
       status: "planning",
       task_count: 0,

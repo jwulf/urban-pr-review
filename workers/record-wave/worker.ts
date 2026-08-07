@@ -15,8 +15,10 @@
 import type { AppJobHandler } from "@nanobpm/urban";
 import { type PlanTask, planTaskDeps, planTasks, plans } from "../../app/plan.ts";
 import { parsePr, submitPr } from "../../app/service.ts";
-import { parseTaskDelta, recordTaskDelta } from "../../app/taskDelta.ts";
+import { parseTaskDelta, readTaskDeltas, recordTaskDelta } from "../../app/taskDelta.ts";
 import { appendEntry } from "../../app/blackboard.ts";
+import { deriveExclusions, recordExclusions } from "../../app/mergeExclusion.ts";
+import { fetchPrFiles } from "../../app/github.ts";
 
 interface Result {
   status?: unknown;
@@ -74,6 +76,14 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     list.push(d.depends_on_task_id);
     depsByTask.set(d.task_id, list);
   }
+
+  // The tasks with a concurrently-open PR in THIS wave — the set the D2 conflict-scan runs over
+  // (cross-wave pairs are moot: the wave barrier merges earlier waves before later ones start).
+  // This includes both `opened` PRs (also handed off below) AND `escalated` tasks' work-preserving
+  // DRAFT PRs (feature.md): a draft's changed files can still overlap a sibling's, so omitting it
+  // would silently under-approximate the merge-exclusion graph (the scan is a deliberate
+  // over-approximation). Escalated drafts are scanned but NEVER handed off (not ready for review).
+  const openedThisWave: { taskId: string; repo: string; number: number | string }[] = [];
 
   for (let i = 0; i < waveTasks.length; i++) {
     const taskId = str((waveTasks[i] ?? {}).id);
@@ -142,9 +152,19 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
       }
     }
 
+    // Include this task's PR in the D2 conflict-scan set when it is concurrently open in the wave:
+    // an `opened` PR (also handed off below), OR an `escalated` task's work-preserving DRAFT PR
+    // (feature.md — `status: "escalated"` may carry the draft `pr` it opened to preserve work).
+    // The draft's changed files can overlap a sibling's, so scanning it keeps the merge-exclusion
+    // graph a conservative over-approximation instead of silently missing those overlaps.
+    const scanPr = parsed ?? (rawStatus === "escalated" && prRef ? parsePr(prRef) : null);
+    if (scanPr) {
+      openedThisWave.push({ taskId, repo: scanPr.repo, number: scanPr.number });
+    }
     // Handoff: enroll each opened PR into the convergence loop. Best-effort — a failed handoff
     // must not fail the wave; the PR is recorded and can be resubmitted. `submitPr` is idempotent
     // on prKey (a PR already converging is a no-op), so a retry of this worker won't double-start.
+    // Only `opened` PRs are handed off — an escalated draft is not yet ready for review.
     if (parsed) {
       const depPrKeys: string[] = [];
       for (const depTaskId of depsByTask.get(taskId) ?? []) {
@@ -158,6 +178,51 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
           err: String(err),
         });
       }
+    }
+  }
+
+  // D2 conflict-scan (issue #58): derive the merge-exclusion graph (D1/#57) for this wave's
+  // concurrently-open PRs from FILE-OVERLAP — any two that touch the same path can't land
+  // independently. Each task's file set = its reported `newlyTouches` (D5, zero I/O) ∪ its PR's
+  // actual changed files (best-effort via gh/token). Whole block is best-effort + idempotent
+  // (upsert per pair): a transport failure or a retry must never fail the wave.
+  if (openedThisWave.length >= 2) {
+    try {
+      const deltas = await readTaskDeltas(app.data, planKey);
+      const touchesByTask = new Map<string, Set<string>>();
+      const openedIds = new Set(openedThisWave.map((o) => o.taskId));
+      for (const d of deltas) {
+        if (!openedIds.has(d.taskId) || d.newlyTouches.length === 0) continue;
+        touchesByTask.set(d.taskId, new Set(d.newlyTouches));
+      }
+      const token = process.env.GITHUB_TOKEN ?? "";
+      for (const o of openedThisWave) {
+        try {
+          const files = await fetchPrFiles(o.repo, o.number, token);
+          if (!files || files.length === 0) continue;
+          const set = touchesByTask.get(o.taskId) ?? new Set<string>();
+          for (const f of files) set.add(f);
+          touchesByTask.set(o.taskId, set);
+        } catch (err) {
+          app.log("error", `record-wave: pr files fetch failed for ${o.repo}#${o.number}`, {
+            err: String(err),
+          });
+        }
+      }
+      const edges = deriveExclusions(touchesByTask);
+      if (edges.length > 0) {
+        const { inserted, updated } = await recordExclusions(app.data, planKey, edges);
+        app.log("info", `record-wave: merge-exclusion scan wave ${currentWave}`, {
+          planKey,
+          edges: edges.length,
+          inserted,
+          updated,
+        });
+      }
+    } catch (err) {
+      app.log("error", `record-wave: merge-exclusion scan failed for ${planKey}`, {
+        err: String(err),
+      });
     }
   }
 
