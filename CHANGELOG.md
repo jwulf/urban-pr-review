@@ -1,3 +1,10 @@
+# [0.21.0](https://github.com/jwulf/urban-pr-review/compare/v0.20.0...v0.21.0) (2026-08-07)
+
+
+### Features
+
+* **coordination:** add waiting-for-lane task state (D7) ([#65](https://github.com/jwulf/urban-pr-review/issues/65)) ([2311b07](https://github.com/jwulf/urban-pr-review/commit/2311b07b1f93793cde801fad5bad7fcc793e52f2))
+
 # [0.20.0](https://github.com/jwulf/urban-pr-review/compare/v0.19.0...v0.20.0) (2026-08-07)
 
 
