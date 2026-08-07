@@ -140,6 +140,37 @@ Deno.test("appendEntry: idempotent on dedupe_key (a job retry re-POST is a no-op
   assertEquals(stores["plan_blackboard"].length, 1, "exactly one row persisted");
 });
 
+Deno.test("appendEntry: a lost UNIQUE race collapses to a no-op instead of a 500", async () => {
+  // Simulate the concurrency window: two POSTs share a dedupe_key, both miss the findOne
+  // pre-check, then insert loses the race on the UNIQUE (plan_key, dedupe_key) index. The
+  // catch branch must re-read the winner's row and return it rather than propagate the throw.
+  const winner = { id: 42, plan_key: "p", dedupe_key: "t:claim:1", author_task: "t", body: "claim" };
+  let preCheckDone = false;
+  // deno-lint-ignore no-explicit-any
+  const table: any = {
+    // deno-lint-ignore require-await
+    async findOne() {
+      // Pre-check misses (row not yet visible); the recovery read after the collision hits.
+      if (!preCheckDone) {
+        preCheckDone = true;
+        return undefined;
+      }
+      return winner;
+    },
+    // deno-lint-ignore require-await
+    async insert() {
+      throw Object.assign(new Error("UNIQUE constraint failed: plan_blackboard.dedupe_key"), {
+        code: "SQLITE_CONSTRAINT_UNIQUE",
+      });
+    },
+  };
+  // deno-lint-ignore no-explicit-any
+  const data = { table: () => table } as any as DataLayer;
+  const res = await appendEntry(data, "p", { author_task: "t", body: "claim", dedupe_key: "t:claim:1" });
+  assertEquals(res.inserted, false, "a lost race is not a fresh insert");
+  assertEquals(res.id, 42, "returns the winning row's id");
+});
+
 Deno.test("appendEntry: a blank body is rejected", async () => {
   const { data } = memData();
   let threw = false;
