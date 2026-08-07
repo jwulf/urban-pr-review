@@ -9,6 +9,8 @@
 // dependency ended `blocked` / `skipped` (or is otherwise not opened), the dependent can't be
 // built: this worker marks it `skipped` (recording which deps were unmet) and excludes it from
 // the wave, so the failure cascades forward instead of dispatching an agent that can't succeed.
+// A dependency in `waiting-for-lane` is different: its PR is good but parked behind a merge lane,
+// so the dependent stays `pending` and simply waits for a later wave retry.
 //
 // Emitting an empty `waveTasks` is fine: the MI activity over an empty collection completes
 // immediately (the same 0-task path the flat fan-out already relied on).
@@ -59,7 +61,11 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     // Only fresh tasks are dispatchable; a retry of this wave must not re-run resolved ones.
     if (r.status !== "pending") continue;
 
-    const unmet = (depsByTask.get(r.task_id) ?? []).filter((d) => statusById.get(d) !== "opened");
+    const depIds = depsByTask.get(r.task_id) ?? [];
+    const unmet = depIds.filter((d) => {
+      const status = statusById.get(d);
+      return status !== "opened" && status !== "waiting-for-lane";
+    });
     if (unmet.length > 0) {
       await taskTable.update(r.id, {
         status: "skipped",
@@ -68,6 +74,7 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
       });
       continue;
     }
+    if (depIds.some((d) => statusById.get(d) === "waiting-for-lane")) continue;
     waveTasks.push({ id: r.task_id, title: r.title ?? r.task_id, prompt: r.prompt ?? "" });
   }
 

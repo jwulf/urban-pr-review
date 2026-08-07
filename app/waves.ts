@@ -95,9 +95,9 @@ export interface WaveGateTask {
 }
 
 /** The PR keys that must MERGE for `gateWave` to clear the wave-merge barrier: the PRs opened by
- * that wave's tasks. Only `opened` tasks produced a PR to wait on — `blocked`/`skipped` tasks can
- * never merge and must not wedge the barrier (their failure already cascaded to dependents in
- * `select-wave`), and an `opened` task with no `pr_key` is treated as having nothing to wait on.
+ * that wave's tasks. `opened` tasks and `waiting-for-lane` tasks with PR keys produced a PR to
+ * wait on — `blocked`/`skipped` tasks can never merge and must not wedge the barrier, and keyless
+ * tasks are treated as having nothing to wait on.
  *
  * Pure and side-effect free (like {@link computeWaves}) so the poller's gate decision is a
  * red/green regression target: the poller releases the next wave iff every key returned here has
@@ -109,7 +109,7 @@ export function waveMergeTargets(
   const keys: string[] = [];
   for (const t of tasks) {
     if (t.wave !== gateWave) continue;
-    if (t.status !== "opened" || !t.pr_key) continue;
+    if ((t.status !== "opened" && t.status !== "waiting-for-lane") || !t.pr_key) continue;
     keys.push(t.pr_key);
   }
   return keys;

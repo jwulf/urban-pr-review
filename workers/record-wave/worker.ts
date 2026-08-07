@@ -8,12 +8,19 @@
 //     its dependency tasks' PRs as `dependsOn` — so the merge-ordering DAG (`pr_dependencies`)
 //     matches the task DAG for free,
 //   • advances `currentWave` and emits `hasMoreWaves` so the loop either runs the next wave
-//     (`select-wave`) or falls through to `record-results`.
+//     (`select-wave`) or falls through to `record-results`; if `select-wave` left a task pending
+//     behind a non-fatal wait (e.g. `waiting-for-lane`), the loop parks and retries this wave.
 //
 // Enrollment lives here (not in the finalizer) so a PR is enrolled the moment its wave lands —
 // and, crucially, so a later wave's `dependsOn` can reference the PR keys earlier waves produced.
 import type { AppJobHandler } from "@nanobpm/urban";
-import { type PlanTask, planTaskDeps, planTasks, plans } from "../../app/plan.ts";
+import {
+  type PlanTask,
+  type PlanTaskStatus,
+  planTaskDeps,
+  planTasks,
+  plans,
+} from "../../app/plan.ts";
 import { parsePr, submitPr } from "../../app/service.ts";
 import { parseTaskDelta, readTaskDeltas, recordTaskDelta } from "../../app/taskDelta.ts";
 import { appendEntry } from "../../app/blackboard.ts";
@@ -47,7 +54,10 @@ const str = (v: unknown): string | undefined =>
 // The implementation agent reports one of these (see prompts/feature.md). Anything else —
 // including a missing status — is treated as `blocked`: we must not assume a PR was opened,
 // and we only hand off / persist a PR when the status is `opened`.
-const ALLOWED_STATUSES = new Set(["opened", "blocked", "skipped"]);
+type WaveResultStatus = Extract<PlanTaskStatus, "opened" | "blocked" | "skipped">;
+const ALLOWED_STATUSES = new Set<WaveResultStatus>(["opened", "blocked", "skipped"]);
+const isWaveResultStatus = (s: string): s is WaveResultStatus =>
+  ALLOWED_STATUSES.has(s as WaveResultStatus);
 
 // Coerce a wave index/count to a non-negative integer, falling back to 0. A NaN here would make
 // `nextWave < waveCount` mis-evaluate and end the loop early, leaving tasks `pending`.
@@ -90,7 +100,9 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     if (!taskId) continue;
     const res = results[i] ?? {};
     const rawStatus = str(res.status);
-    const status = rawStatus && ALLOWED_STATUSES.has(rawStatus) ? rawStatus : "blocked";
+    const status: WaveResultStatus = rawStatus && isWaveResultStatus(rawStatus)
+      ? rawStatus
+      : "blocked";
     const summary = str(res.summary);
     const prRef = str(res.pr);
     // Only trust a PR ref when the agent reports it actually opened one.
@@ -226,8 +238,10 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     }
   }
 
-  const nextWave = currentWave + 1;
-  const hasMoreWaves = nextWave < waveCount;
+  const stillPendingCurrentWave = (await taskTable.find({ plan_key: planKey }))
+    .some((t) => (t.wave ?? 0) === currentWave && t.status === "pending");
+  const nextWave = stillPendingCurrentWave ? currentWave : currentWave + 1;
+  const hasMoreWaves = stillPendingCurrentWave || nextWave < waveCount;
 
   // Wave-merge barrier: when another wave follows, park the plan-fanout instance at the
   // `wait-wave-merged` catch event until THIS wave's opened PRs have MERGED (not merely opened).

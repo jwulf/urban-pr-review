@@ -62,7 +62,7 @@ export interface PlanTask {
   task_id: string;
   title: string | null;
   prompt: string | null;
-  status: string;
+  status: PlanTaskStatus;
   pr_key: string | null;
   summary: string | null;
   wave: number | null;
@@ -76,6 +76,16 @@ export interface PlanTask {
   created_at: string;
   updated_at: string;
 }
+
+export const PLAN_TASK_STATUSES = [
+  "pending",
+  "opened",
+  "blocked",
+  "skipped",
+  "escalated",
+  "waiting-for-lane",
+] as const;
+export type PlanTaskStatus = typeof PLAN_TASK_STATUSES[number];
 
 /** One implementation-phase escalation (issue #25) — the per-task analogue of the
  * review loop's `escalations` row. `status` is open | answered. */
