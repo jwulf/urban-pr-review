@@ -123,12 +123,13 @@ Before you finalise the split, look for tasks that would **edit the same surface
 — the same file, the same test scaffold/harness, the same schema or config, the
 same shared module. Such tasks are independent to *write* but collide on *merge*:
 each opens a green PR, but the second to land hits a conflict (or, worse, a
-**semantic** break its own CI never ran). Do **not** paper over this with a
+**semantic** break that no PR's CI exercised — each task's own CI runs, but
+none runs the *combined* state). Do **not** paper over this with a
 `dependsOn` edge whose only purpose is to serialise the landing — that needlessly
 serialises *implementation* that could have run in parallel, and is the opposite
 waste from the collision.
 
-Instead, resolve a shared surface at **decomposition** time, one of two ways:
+Instead, resolve a shared surface at **decomposition** time, in one of two ways:
 
 1. **Merge into one coarser task.** If two-or-more slices are really slices of *one
    file's behaviour* (e.g. many cases appended to the same test scaffold), emit a

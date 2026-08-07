@@ -32,8 +32,9 @@ decomposition **from the issues**, then test the plan against it.
   has no verifying task, or a verifying task's entry condition points at a task that doesn't exist.
 - **Non-independent decomposition.** Two tasks will edit the **same surface** — the same file,
   test scaffold/harness, schema, config, or shared module — so, though independent to write, they
-  **collide on merge**: the second PR to land hits a conflict, or a semantic break its own green CI
-  never exercised. Flag this, and demand a **remedy at decomposition time**, not a landing-order
+  **collide on merge**: the second PR to land hits a conflict, or a semantic break that no PR's CI
+  exercised (each PR's own CI runs green; none runs the combined state). Flag this, and demand a
+  **remedy at decomposition time**, not a landing-order
   hack: either (a) **merge** the colliding slices into one coarser task that owns the surface, or
   (b) extract a **wave-0 scaffold task** that lands the shared surface first with the siblings
   `dependsOn` it. Reject a `dependsOn` edge added purely to **serialise the landing** of otherwise
