@@ -2,7 +2,7 @@
   "$schema": "https://nanobpm.io/spec-app/nano-app.schema.json",
   "schemaVersion": 1,
   "id": "urban-pr-review",
-  "name": "PR Review Convergence",
+  "name": "Nano Workforce",
   "codename": "urban-pr-review",
   "models": {
     "processes": [
@@ -83,6 +83,13 @@
       "homePage": "home",
       "sourceName": "app"
     }
+  },
+  "ui": {
+    "enabled": true,
+    "portEnv": "PR_REVIEW_PORT",
+    "path": "/",
+    "label": "Nano Workforce",
+    "icon": "assets/icon.svg"
   },
   "actions": [
     {

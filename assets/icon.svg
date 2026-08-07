@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Nano Workforce">
+  <title>Nano Workforce</title>
+  <!-- Three coordinated worker nodes converging on a shared task -->
+  <circle cx="12" cy="4.25" r="2.25" />
+  <circle cx="4.75" cy="16.5" r="2.25" />
+  <circle cx="19.25" cy="16.5" r="2.25" />
+  <!-- Links forming the coordination triangle -->
+  <path d="M10.4 6L6.35 14.75" />
+  <path d="M13.6 6L17.65 14.75" />
+  <path d="M7 16.5H17" />
+  <!-- Central convergence mark -->
+  <circle cx="12" cy="16.5" r="0.9" fill="currentColor" stroke="none" />
+</svg>
