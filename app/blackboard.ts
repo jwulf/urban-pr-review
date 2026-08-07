@@ -113,7 +113,7 @@ Your blackboard endpoint (already scoped to this epic — no auth header needed)
 
     curl -s "${url}"
 
-Returns \`{ "planKey": "...", "entries": [ { "id", "author_task", "kind", "files", "body", "wave", "created_at" }, ... ] }\`.
+Returns \`{ "planKey": "...", "cursor": <number>, "entries": [ { "author_task", "kind", "files", "body", "created_at" }, ... ] }\`.
 If an entry overlaps your slice (same file, a changed contract/constraint), adapt: coordinate,
 rebase your plan, or if it genuinely blocks you, escalate with a \`question\` per your normal contract.
 
