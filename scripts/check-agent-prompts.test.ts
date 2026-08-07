@@ -78,7 +78,7 @@ Deno.test("checks the real repo: all committed agent prompts resolve", () => {
   assertEquals(res.errors, []);
   assert(res.ok);
   // Every senior:* agent prompt header in the three processes must have resolved.
-  for (const t of ["review-round", "fix-ci", "plan", "plan-review", "feature"]) {
+  for (const t of ["review-round", "fix-ci", "plan", "plan-review", "feature", "trial-merge"]) {
     assert(res.resolved.includes(t), `expected template ${t} to resolve`);
   }
 });

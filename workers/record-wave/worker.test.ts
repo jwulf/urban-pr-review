@@ -75,8 +75,15 @@ Deno.test("record-wave retries the same wave when a task is still pending", asyn
       },
     } as any,
     app,
-  ) as { currentWave: number; hasMoreWaves: boolean };
+  ) as Record<string, unknown>;
 
-  assertEquals(out, { currentWave: 1, hasMoreWaves: true });
+  assertEquals(out, {
+    currentWave: 1,
+    hasMoreWaves: true,
+    waveOpenHeads: [],
+    runTrialMerge: false,
+    trialMergeWave: 1,
+    trialMergeSkipReason: "fewer-than-two-open-heads",
+  });
   assertEquals((planUpdates[0].patch as Record<string, unknown>).gate_wave, 1);
 });

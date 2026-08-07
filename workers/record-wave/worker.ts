@@ -25,7 +25,9 @@ import { parsePr, submitPr } from "../../app/service.ts";
 import { parseTaskDelta, readTaskDeltas, recordTaskDelta } from "../../app/taskDelta.ts";
 import { appendEntry } from "../../app/blackboard.ts";
 import { deriveExclusions, recordExclusions } from "../../app/mergeExclusion.ts";
-import { fetchPrFiles } from "../../app/github.ts";
+import { fetchPrFiles, fetchPrHead } from "../../app/github.ts";
+import { loadMergeProtocol } from "../../app/mergeProtocol.ts";
+import { shouldRunTrialMerge, type TrialMergeHead } from "../../app/trialMerge.ts";
 
 interface Result {
   status?: unknown;
@@ -46,6 +48,10 @@ interface In extends Record<string, unknown> {
 interface Out extends Record<string, unknown> {
   currentWave: number;
   hasMoreWaves: boolean;
+  waveOpenHeads: TrialMergeHead[];
+  runTrialMerge: boolean;
+  trialMergeWave: number;
+  trialMergeSkipReason?: string;
 }
 
 const str = (v: unknown): string | undefined =>
@@ -94,6 +100,7 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
   // would silently under-approximate the merge-exclusion graph (the scan is a deliberate
   // over-approximation). Escalated drafts are scanned but NEVER handed off (not ready for review).
   const openedThisWave: { taskId: string; repo: string; number: number | string }[] = [];
+  const readyHeadsThisWave: { repo: string; number: number | string }[] = [];
 
   for (let i = 0; i < waveTasks.length; i++) {
     const taskId = str((waveTasks[i] ?? {}).id);
@@ -173,6 +180,7 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     if (scanPr) {
       openedThisWave.push({ taskId, repo: scanPr.repo, number: scanPr.number });
     }
+    if (parsed) readyHeadsThisWave.push({ repo: parsed.repo, number: parsed.number });
     // Handoff: enroll each opened PR into the convergence loop. Best-effort — a failed handoff
     // must not fail the wave; the PR is recorded and can be resubmitted. `submitPr` is idempotent
     // on prKey (a PR already converging is a no-op), so a retry of this worker won't double-start.
@@ -183,6 +191,7 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
         const depRow = byTaskId.get(depTaskId);
         if (depRow?.pr_key) depPrKeys.push(depRow.pr_key);
       }
+
       try {
         await submitPr(app.data, app.engine, parsed, depPrKeys);
       } catch (err) {
@@ -190,6 +199,38 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
           err: String(err),
         });
       }
+    }
+  }
+
+  // D3 trial-merge gate (issue #69): expose the concurrently-open READY PR heads for the BPMN
+  // agent step, and decide whether to dispatch it at all. Single-head waves are just ordinary PR
+  // CI, and Mergify queue repos already perform their own batch trial merge, so both skip.
+  const waveOpenHeads: TrialMergeHead[] = [];
+  for (const h of readyHeadsThisWave) {
+    const head: TrialMergeHead = { repo: h.repo, prNumber: h.number };
+    try {
+      const meta = await fetchPrHead(h.repo, h.number, process.env.GITHUB_TOKEN ?? "");
+      if (meta?.headRef) head.headRef = meta.headRef;
+      if (meta?.headSha) head.headSha = meta.headSha;
+    } catch (err) {
+      app.log("error", `record-wave: pr head fetch failed for ${h.repo}#${h.number}`, { err: String(err) });
+    }
+    waveOpenHeads.push(head);
+  }
+  let runTrialMerge = false;
+  let trialMergeSkipReason: string | undefined;
+  if (waveOpenHeads.length < 2) {
+    trialMergeSkipReason = "fewer-than-two-open-heads";
+  } else {
+    const repo = waveOpenHeads[0]?.repo ?? planKey.split("#")[0];
+    try {
+      const protocol = await loadMergeProtocol(repo, process.env.GITHUB_TOKEN ?? "");
+      runTrialMerge = shouldRunTrialMerge(waveOpenHeads.length, protocol);
+      if (!runTrialMerge) trialMergeSkipReason = "mergify-queue";
+    } catch (err) {
+      app.log("error", `record-wave: merge protocol fetch failed for ${repo}`, { err: String(err) });
+      runTrialMerge = shouldRunTrialMerge(waveOpenHeads.length, { land: { method: "gh-merge" } });
+      trialMergeSkipReason = runTrialMerge ? undefined : "merge-protocol-unavailable";
     }
   }
 
@@ -259,7 +300,14 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     app.log("error", `record-wave: arming wave gate failed for ${planKey}`, { err: String(err) });
   }
 
-  return { currentWave: nextWave, hasMoreWaves };
+  return {
+    currentWave: nextWave,
+    hasMoreWaves,
+    waveOpenHeads,
+    runTrialMerge,
+    trialMergeWave: currentWave,
+    trialMergeSkipReason,
+  };
 };
 
 export default handler;

@@ -11,6 +11,7 @@ import { layoutBpmn } from "@nanobpm/urban";
 const g = globalThis as {
   Deno?: {
     args: string[];
+    readDir(p: string): AsyncIterable<{ name: string; isFile: boolean }>;
     readTextFile(p: string): Promise<string>;
     writeTextFile(p: string, s: string): Promise<void>;
   };
@@ -25,6 +26,19 @@ async function writeText(path: string, text: string): Promise<void> {
   if (g.Deno?.writeTextFile) return await g.Deno.writeTextFile(path, text);
   await (await import("node:fs/promises")).writeFile(path, text, "utf8");
 }
+async function defaultProcessFiles(): Promise<string[]> {
+  const dir = "resources/processes";
+  if (g.Deno?.readDir) {
+    const files: string[] = [];
+    for await (const e of g.Deno.readDir(dir)) if (e.isFile && e.name.endsWith(".bpmn")) files.push(`${dir}/${e.name}`);
+    return files.sort();
+  }
+  const fs = await import("node:fs/promises");
+  return (await fs.readdir(dir, { withFileTypes: true }))
+    .filter((e) => e.isFile() && e.name.endsWith(".bpmn"))
+    .map((e) => `${dir}/${e.name}`)
+    .sort();
+}
 
 // Count the shapes/edges the layout produced, so the run reports what it drew (matches the
 // "N shapes + M edges" accounting used when merge-loop's DI was first generated, #18).
@@ -34,7 +48,9 @@ const countDi = (xml: string) => ({
 });
 
 async function main() {
-  const files = g.Deno?.args ?? process.argv.slice(2);
+  const files = (g.Deno?.args ?? process.argv.slice(2)).length
+    ? (g.Deno?.args ?? process.argv.slice(2))
+    : await defaultProcessFiles();
   if (files.length === 0) {
     console.error("usage: layout-bpmn <file.bpmn> [more.bpmn ...]");
     if (g.Deno) g.Deno && (globalThis as { Deno?: { exit(c: number): never } }).Deno!.exit(2);
