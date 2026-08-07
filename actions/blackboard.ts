@@ -6,12 +6,20 @@
 // and write to exactly one plan, so no shared secret is needed — the agent curls the exact URL it
 // was handed in its prompt. An unknown token is a 404 (never leaks which plans exist).
 //
-//   GET  → { planKey, entries: [ { id, author_task, kind, files, body, wave, created_at } ] }
-//          optional ?since=<id> returns only entries with id > since (incremental poll).
+//   GET  → { planKey, entries: [ { id, author_task, kind, files, body, wave, created_at } ], cursor }
+//          optional ?since=<id> returns only entries with id > since (incremental poll). `cursor` is
+//          the plan's current head id; pass it back as `since` on the next poll (Tier 2).
 //   POST → append one entry: { author_task?, kind?, files?, body, wave?, dedupe_key? }. Idempotent
-//          on (plan, dedupe_key). Returns { id, inserted }.
+//          on (plan, dedupe_key). Returns { id, inserted, conflicts } — `conflicts` lists prior
+//          sibling `file-claim`s on the same file(s) (advisory first-writer-wins; never a lock).
 import type { ActionHandler } from "@nanobpm/urban";
-import { appendEntry, normalizeKind, planKeyForToken, readBlackboard } from "../app/blackboard.ts";
+import {
+  appendEntry,
+  detectFileClaimConflicts,
+  normalizeKind,
+  planKeyForToken,
+  readBlackboardPage,
+} from "../app/blackboard.ts";
 
 const handler: ActionHandler = async ({ req, body }, app) => {
   const token = (req.query.get("token") ?? req.headers.get("x-blackboard-token") ?? "").trim();
@@ -22,24 +30,34 @@ const handler: ActionHandler = async ({ req, body }, app) => {
   if (req.method === "GET") {
     const rawSince = req.query.get("since");
     const since = rawSince != null && /^\d+$/.test(rawSince) ? Number(rawSince) : undefined;
-    const entries = await readBlackboard(app.data, planKey, { since });
-    return { status: 200, body: { planKey, entries } };
+    const { entries, cursor } = await readBlackboardPage(app.data, planKey, { since });
+    return { status: 200, body: { planKey, entries, cursor } };
   }
 
   if (req.method === "POST") {
     const b = (body ?? {}) as Record<string, unknown>;
     const text = typeof b.body === "string" ? b.body.trim() : "";
     if (!text) return { status: 400, body: { error: "'body' (the note text) is required" } };
+    const kind = normalizeKind(b.kind);
     const files = Array.isArray(b.files) ? b.files.map(String) : [];
+    const author_task = typeof b.author_task === "string" ? b.author_task : undefined;
+    // Advisory conflict-of-intent: surface prior sibling claims on the same file(s) before we write
+    // ours (first-writer-wins). Never blocks the append — the agent decides how to react.
+    const conflicts = kind === "file-claim"
+      ? await detectFileClaimConflicts(app.data, planKey, { author_task, files })
+      : [];
     const res = await appendEntry(app.data, planKey, {
-      author_task: typeof b.author_task === "string" ? b.author_task : undefined,
-      kind: normalizeKind(b.kind),
+      author_task,
+      kind,
       files,
       body: text,
       wave: typeof b.wave === "number" ? b.wave : null,
       dedupe_key: typeof b.dedupe_key === "string" ? b.dedupe_key : undefined,
     });
-    return { status: res.inserted ? 201 : 200, body: { id: Number(res.id), inserted: res.inserted } };
+    return {
+      status: res.inserted ? 201 : 200,
+      body: { id: Number(res.id), inserted: res.inserted, conflicts },
+    };
   }
 
   return { status: 405, body: { error: "method not allowed (use GET or POST)" } };

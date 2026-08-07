@@ -126,7 +126,20 @@ rebase your plan, or if it genuinely blocks you, escalate with a \`question\` pe
 \`constraint-change\` (you discovered a constraint that changes another task's direction),
 \`scope-change\` (your contract/scope shifted), or \`note\`. Set \`author_task\` to your task id.
 If a retry might make you re-POST the same fact, include a stable \`"dedupe_key"\` so it collapses to
-one entry.`;
+one entry.
+
+**Stay in sync while you work (this matters most while siblings run in parallel).** The GET
+response includes a \`"cursor"\`. Re-read incrementally — before you start each new file, and at
+least every few minutes on long tasks — passing the last cursor back as \`since\` so you fetch only
+what's new:
+
+    curl -s "${url}&since=<cursor>"
+
+**React to a file-claim conflict.** When you POST a \`file-claim\`, the response includes
+\`"conflicts"\`: any prior claims by siblings on the same file(s). First claim wins (advisory). If a
+conflict names you as the later claimer, don't barge in — back off that file, post a \`note\` to
+coordinate, or if it genuinely blocks you, escalate a \`question\` per your normal contract. Nothing
+here is a hard lock; the merge step is the real safety net.`;
 }
 
 const blackboardTable = (data: DataLayer) => data.table<BlackboardRow>("plan_blackboard", "id");
@@ -150,28 +163,85 @@ function decodeFiles(raw: string | null): string[] {
   }
 }
 
-/** A plan's entries in write order (id asc). `since` returns only entries with `id > since`.
- * Loads the plan's rows and filters/sorts in memory (adequate at Tier 2 volumes; not a
- * pushdown-indexed scan). Used by Tier 2 incremental polling. */
+function toEntry(r: BlackboardRow): BlackboardEntry {
+  return {
+    id: r.id,
+    author_task: r.author_task,
+    kind: r.kind,
+    files: decodeFiles(r.files),
+    body: r.body,
+    wave: r.wave,
+    created_at: r.created_at,
+  };
+}
+
+/** One incremental read: the entries after `since` (write order) plus `cursor` — the plan's current
+ * head id. An agent polling midflight (Tier 2) passes `cursor` back as the next `since`, so it pulls
+ * only what siblings added since its last read. `cursor` is the true head even when `since` filters
+ * every entry out, so a caller that is fully caught up learns it is caught up (cursor unchanged). */
+export interface BlackboardPage {
+  entries: BlackboardEntry[];
+  cursor: number;
+}
+
+export async function readBlackboardPage(
+  data: DataLayer,
+  planKey: string,
+  opts: { since?: number } = {},
+): Promise<BlackboardPage> {
+  const rows = await blackboardTable(data).find({ plan_key: planKey });
+  const cursor = rows.reduce((max, r) => (r.id > max ? r.id : max), opts.since ?? 0);
+  const since = opts.since ?? 0;
+  const entries = rows
+    .filter((r) => r.id > since)
+    .sort((a, b) => a.id - b.id)
+    .map(toEntry);
+  return { entries, cursor };
+}
+
+/** A plan's entries in write order (id asc). `since` returns only entries with `id > since`. */
 export async function readBlackboard(
   data: DataLayer,
   planKey: string,
   opts: { since?: number } = {},
 ): Promise<BlackboardEntry[]> {
-  const rows = await blackboardTable(data).find({ plan_key: planKey });
-  const since = opts.since ?? 0;
-  return rows
-    .filter((r) => r.id > since)
-    .sort((a, b) => a.id - b.id)
-    .map((r) => ({
-      id: r.id,
-      author_task: r.author_task,
-      kind: r.kind,
-      files: decodeFiles(r.files),
-      body: r.body,
-      wave: r.wave,
-      created_at: r.created_at,
-    }));
+  return (await readBlackboardPage(data, planKey, opts)).entries;
+}
+
+/** An advisory conflict-of-intent: a sibling has already claimed a file this writer is about to
+ * claim. Reported per (file, prior claim) so the later claimer can back off, coordinate, or escalate.
+ * First-writer-wins is advisory only — the blackboard NEVER locks; merge-time gates are the real
+ * safety net. */
+export interface ClaimConflict {
+  file: string;
+  author_task: string;
+  id: number;
+  body: string;
+  created_at: string;
+}
+
+/** Prior `file-claim` entries by OTHER authors on this plan that overlap `files`. Used by the
+ * endpoint to surface conflicts on a `file-claim` POST; a writer's own earlier claim is never a
+ * conflict with itself. */
+export async function detectFileClaimConflicts(
+  data: DataLayer,
+  planKey: string,
+  opts: { author_task?: string; files: string[] },
+): Promise<ClaimConflict[]> {
+  const want = new Set((opts.files ?? []).map((f) => String(f).trim()).filter((s) => s !== ""));
+  if (want.size === 0) return [];
+  const me = opts.author_task?.trim() || "";
+  const rows = await blackboardTable(data).find({ plan_key: planKey, kind: "file-claim" });
+  const out: ClaimConflict[] = [];
+  for (const r of rows.slice().sort((a, b) => a.id - b.id)) {
+    if ((r.author_task || "") === me) continue;
+    for (const f of decodeFiles(r.files)) {
+      if (want.has(f)) {
+        out.push({ file: f, author_task: r.author_task, id: r.id, body: r.body, created_at: r.created_at });
+      }
+    }
+  }
+  return out;
 }
 
 /** Append an entry, idempotently. A blank `body` is rejected. When a `dedupe_key` is supplied and
