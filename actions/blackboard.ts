@@ -40,7 +40,11 @@ const handler: ActionHandler = async ({ req, body }, app) => {
     if (!text) return { status: 400, body: { error: "'body' (the note text) is required" } };
     const kind = normalizeKind(b.kind);
     const files = Array.isArray(b.files) ? b.files.map(String) : [];
-    const author_task = typeof b.author_task === "string" ? b.author_task : undefined;
+    // Normalize once (trim + default to "system") so the value we send to appendEntry matches the
+    // value we send to detectFileClaimConflicts. Otherwise an omitted/blank author_task is stored as
+    // "system" but conflict detection sees "", and the caller's own prior "system" claims are wrongly
+    // reported as sibling conflicts.
+    const author_task = (typeof b.author_task === "string" ? b.author_task.trim() : "") || "system";
     const res = await appendEntry(app.data, planKey, {
       author_task,
       kind,

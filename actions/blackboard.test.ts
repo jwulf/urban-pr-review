@@ -158,6 +158,29 @@ Deno.test("POST file-claim surfaces a sibling's prior claim as a conflict (advis
   assertEquals(second.body.conflicts[0].file, "engine/state.rs");
 });
 
+Deno.test("POST file-claim without author_task does not report the caller's own prior 'system' claim as a conflict", async () => {
+  const { app } = memApp();
+  await seedPlan(app, "o/r#1", "tok");
+  // First claim omits author_task → stored as "system".
+  const first = await call(app, "POST", { token: "tok" }, {
+    kind: "file-claim",
+    files: ["engine/state.rs"],
+    body: "system owns state.rs",
+  });
+  assertEquals(first.body.conflicts, []);
+  // Same anonymous caller claims the same file again. Because author_task normalizes to "system" for
+  // both the append and the conflict detection, the earlier "system" row is the caller's own and must
+  // not be reported as a sibling conflict.
+  const second = await call(app, "POST", { token: "tok" }, {
+    author_task: "   ",
+    kind: "file-claim",
+    files: ["engine/state.rs"],
+    body: "system re-claims state.rs",
+  });
+  assertEquals(second.status, 201);
+  assertEquals(second.body.conflicts, [], "own prior 'system' claim is not a conflict");
+});
+
 Deno.test("POST a non-file-claim carries no conflicts", async () => {
   const { app } = memApp();
   await seedPlan(app, "o/r#1", "tok");
