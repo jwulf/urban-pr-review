@@ -65,6 +65,26 @@ Deno.test("record-trial-merge escalates only suite-failed results", async () => 
   assertStringIncludes(String(out.question ?? ""), "proceed");
 });
 
+Deno.test("record-trial-merge renders odd failing payloads without throwing", async () => {
+  const { app } = fakeApp();
+  const out = await handler(
+    // deno-lint-ignore no-explicit-any
+    {
+      variables: {
+        planKey: "o/r#69",
+        result: "suite-failed",
+        summary: "combined test failed",
+        failing: [1n],
+      },
+    } as any,
+    // deno-lint-ignore no-explicit-any
+    app as any,
+  ) as Record<string, unknown>;
+
+  assertEquals(out.trialMergeRed, true);
+  assertStringIncludes(String(out.question ?? ""), "Failing:");
+});
+
 Deno.test("record-trial-merge treats textual conflicts as pass-through", async () => {
   const { app } = fakeApp();
   const out = await handler(

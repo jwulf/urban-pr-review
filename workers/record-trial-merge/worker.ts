@@ -33,6 +33,13 @@ const waveNo = (v: unknown): number => {
   const n = Math.trunc(Number(v));
   return Number.isFinite(n) && n >= 0 ? n : 0;
 };
+const safeJson = (v: unknown): string => {
+  try {
+    return JSON.stringify(v) ?? String(v);
+  } catch {
+    return String(v);
+  }
+};
 
 function parseResult(v: unknown): TrialMergeResult {
   return typeof v === "string" && RESULTS.has(v as TrialMergeResult) ? (v as TrialMergeResult) : "suite-failed";
@@ -66,7 +73,7 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
   if (!trialMergeRed) return { trialMergeRed, summary };
 
   const failing = Array.isArray(job.variables.failing) && job.variables.failing.length > 0
-    ? ` Failing: ${JSON.stringify(job.variables.failing).slice(0, 1000)}`
+    ? ` Failing: ${safeJson(job.variables.failing).slice(0, 1000)}`
     : "";
   return {
     trialMergeRed,

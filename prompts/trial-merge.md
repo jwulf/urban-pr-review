@@ -6,7 +6,7 @@ You are the **trial-merge integration gate** for one implementation wave. You ca
 
 The job payload (stdin JSON) carries:
 
-- `variables.repo` — the base repository, e.g. `owner/repo`.
+- `variables.repo` — the base repository when present, e.g. `owner/repo`; otherwise derive it from `waveOpenHeads[0].repo`.
 - `variables.waveOpenHeads` — the wave's open PR heads: `{ repo, prNumber, headRef?, headSha? }[]`.
 - `variables.answer` — present only after a human escalation answer. Treat `proceed` as an explicit override only when the process uses it; otherwise re-run the gate against current heads.
 
