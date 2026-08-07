@@ -37,7 +37,7 @@ wait and the retry budget; do **not** loop.
 5. **Make CI re-validate the updated head.** Some repos run CI only when a PR is
    *opened* (to keep review cheap), so a follow-up push does **not** re-run the
    checks and the merge would stay blocked. Read the repo's merge protocol — a
-   ` ```merge-protocol ` block in `AGENTS.md`, else the `## Merging PRs` section of
+   fenced `merge-protocol` code block in `AGENTS.md`, else the `## Merging PRs` section of
    `AGENTS.md` / `CONTRIBUTING.md` / `MERGING.md` — and if pushes don't re-run CI,
    produce a fresh head run as documented (typically `gh pr ready` for a draft, or
    close+reopen).
@@ -56,14 +56,19 @@ wait and the retry budget; do **not** loop.
 
 Return a structured result:
 
-- `status: "rebased"` — you updated the branch onto the current base, resolved any
-  conflicts mechanically, and pushed. The process will re-attempt the merge.
+- `status: "rebased"` — the branch tip now contains the latest base: you resolved
+  any conflicts mechanically and pushed, **or** it was already up to date. The
+  process will re-attempt the merge.
 - `status: "blocked"` — you could **not** resolve it mechanically (a genuine
   semantic conflict where two changes contradict and a human must decide which
   behaviour wins, or the branch is un-rebaseable). Set `question` to a concise,
   specific description of the conflicting intent and the decision a human must make.
 
-Never report `rebased` unless you actually pushed an updated head. If the branch
-was already up to date (no conflict to resolve — the block was transient), say so
-in `summary` and return `blocked` so a human can decide whether to just retry the
-merge.
+Report `rebased` when the branch tip now contains the latest base — either
+because you pushed a resolved update, or because it was **already up to date**
+(the reported conflict was transient / the base had not actually moved). In the
+already-up-to-date case, return `rebased` with a `summary` noting that no push
+was needed, so the process simply re-attempts the merge; the rebase budget
+bounds how many times a still-stuck PR can loop here before it escalates. Reserve
+`blocked` for a genuine semantic conflict you cannot resolve mechanically (or a
+branch that is un-rebaseable), so a human can decide.
