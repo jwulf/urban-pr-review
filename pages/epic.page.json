@@ -26,7 +26,8 @@
           "kind": "datasource",
           "source": "app",
           "table": "plans",
-          "orderBy": { "field": "updated_at", "dir": "desc" }
+          "orderBy": { "field": "updated_at", "dir": "desc" },
+          "filter": [{ "field": "status", "in": ["planning", "dispatched"] }]
         },
         "tabs": [
           {
@@ -68,7 +69,10 @@
           "kind": "datasource",
           "source": "app",
           "table": "plan_tasks",
-          "orderBy": { "field": "wave", "dir": "asc" }
+          "orderBy": { "field": "wave", "dir": "asc" },
+          "filter": [
+            { "field": "status", "in": ["pending", "opened", "escalated", "waiting-for-lane", "blocked"] }
+          ]
         },
         "tabs": [
           {
@@ -161,7 +165,8 @@
           "kind": "datasource",
           "source": "app",
           "table": "plan_trial_merges",
-          "orderBy": { "field": "created_at", "dir": "desc" }
+          "orderBy": { "field": "created_at", "dir": "desc" },
+          "filter": [{ "field": "result", "in": ["merge-conflict", "suite-failed"] }]
         },
         "tabs": [
           {
