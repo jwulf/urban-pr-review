@@ -1,3 +1,10 @@
+# [0.23.0](https://github.com/jwulf/urban-pr-review/compare/v0.22.0...v0.23.0) (2026-08-07)
+
+
+### Features
+
+* **merge:** trial-merge integration gate for semantic conflicts (D3) ([#70](https://github.com/jwulf/urban-pr-review/issues/70)) ([22b6f99](https://github.com/jwulf/urban-pr-review/commit/22b6f994757c359f9258ce873a6b052f967c9e47))
+
 # [0.22.0](https://github.com/jwulf/urban-pr-review/compare/v0.21.0...v0.22.0) (2026-08-07)
 
 
