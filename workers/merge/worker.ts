@@ -55,6 +55,8 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     };
   }
 
+  // Load the repo protocol for every worker invocation. A retry after fix-ci/rebase is a fresh
+  // landing attempt, so land-method decisions must not be latched across earlier heads.
   const protocol = await loadMergeProtocol(repo, token).catch(() => null);
   const method = protocol?.land.method ?? "gh-merge";
 
@@ -115,4 +117,3 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
 };
 
 export default handler;
-
