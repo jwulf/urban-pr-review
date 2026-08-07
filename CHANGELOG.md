@@ -1,3 +1,10 @@
+## [0.14.3](https://github.com/jwulf/urban-pr-review/compare/v0.14.2...v0.14.3) (2026-08-07)
+
+
+### Bug Fixes
+
+* **merge-loop:** add senior:rebase remediation arm ([#42](https://github.com/jwulf/urban-pr-review/issues/42)) ([#50](https://github.com/jwulf/urban-pr-review/issues/50)) ([a8195a4](https://github.com/jwulf/urban-pr-review/commit/a8195a49dae77868e1eb31a17aa32e2dfc3bc0a1))
+
 ## [0.14.2](https://github.com/jwulf/urban-pr-review/compare/v0.14.1...v0.14.2) (2026-08-06)
 
 

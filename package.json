@@ -1,6 +1,6 @@
 {
   "name": "@nanobpm/urban-pr-review",
-  "version": "0.14.2",
+  "version": "0.14.3",
   "description": "Nano Urban app that drives GitHub pull requests to convergence against an automated reviewer, one durable multi-round loop per PR.",
   "type": "module",
   "main": "main.ts",
