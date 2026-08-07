@@ -80,7 +80,7 @@ const handler: AppJobHandler<In, Out> = async (job, app) => {
     trialMergeRed,
     summary,
     task: { id: trialMergeTaskId(wave), title: `Trial merge gate for wave ${wave}` },
-    question: `${summary}${failing}\n\nD3 found a semantic conflict: the PR heads merged cleanly but the combined suite failed. Decide the design fix, update the PR heads, then answer to rerun the trial merge; answer exactly \"proceed\" only to override and continue without rerunning.`,
+    question: `${summary}${failing}\n\nD3 needs a human decision: either the PR heads merged cleanly and the combined suite failed, or the trial-merge agent did not return a valid machine-readable result. Decide the design/infrastructure fix, update the PR heads if needed, then answer to rerun the trial merge; answer exactly \"proceed\" only to override and continue without rerunning.`,
   };
 };
 
