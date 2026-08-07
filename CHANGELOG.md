@@ -1,3 +1,10 @@
+# [0.24.0](https://github.com/jwulf/urban-pr-review/compare/v0.23.0...v0.24.0) (2026-08-07)
+
+
+### Features
+
+* **console:** epic pane — wave state × conflict graph (D10) ([#75](https://github.com/jwulf/urban-pr-review/issues/75)) ([54c9b5b](https://github.com/jwulf/urban-pr-review/commit/54c9b5bfb84ebcce435646191a27f07e78d28b45))
+
 # [0.23.0](https://github.com/jwulf/urban-pr-review/compare/v0.22.0...v0.23.0) (2026-08-07)
 
 
