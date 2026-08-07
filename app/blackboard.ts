@@ -134,10 +134,10 @@ const blackboardTable = (data: DataLayer) => data.table<BlackboardRow>("plan_bla
 /** Resolve a capability token back to its plan, or undefined when the token is unknown. */
 export async function planKeyForToken(data: DataLayer, token: string): Promise<string | undefined> {
   if (!token) return undefined;
-  const rows = await data
+  const row = await data
     .table<{ plan_key: string; blackboard_token: string | null }>("plans", "plan_key")
-    .find({ blackboard_token: token });
-  return rows[0]?.plan_key;
+    .findOne({ blackboard_token: token });
+  return row?.plan_key;
 }
 
 function decodeFiles(raw: string | null): string[] {
@@ -150,8 +150,9 @@ function decodeFiles(raw: string | null): string[] {
   }
 }
 
-/** A plan's entries in write order (id asc). `since` returns only entries with `id > since`
- * (cheap incremental polling, used by Tier 2). */
+/** A plan's entries in write order (id asc). `since` returns only entries with `id > since`.
+ * Loads the plan's rows and filters/sorts in memory (adequate at Tier 2 volumes; not a
+ * pushdown-indexed scan). Used by Tier 2 incremental polling. */
 export async function readBlackboard(
   data: DataLayer,
   planKey: string,
