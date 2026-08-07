@@ -1,3 +1,10 @@
+# [0.15.0](https://github.com/jwulf/urban-pr-review/compare/v0.14.3...v0.15.0) (2026-08-07)
+
+
+### Features
+
+* **coordination:** epic blackboard — Tier 1 dispatch/resume channel ([#53](https://github.com/jwulf/urban-pr-review/issues/53)) ([2dcfb8a](https://github.com/jwulf/urban-pr-review/commit/2dcfb8a5e1bd7beb89d174e646d40d610462365a)), closes [#51](https://github.com/jwulf/urban-pr-review/issues/51) [#49](https://github.com/jwulf/urban-pr-review/issues/49) [Magikcraft/nano-bpm#614](https://github.com/Magikcraft/nano-bpm/issues/614) [#52](https://github.com/jwulf/urban-pr-review/issues/52)
+
 ## [0.14.3](https://github.com/jwulf/urban-pr-review/compare/v0.14.2...v0.14.3) (2026-08-07)
 
 
