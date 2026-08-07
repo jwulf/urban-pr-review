@@ -186,15 +186,35 @@ export async function appendEntry(
     if (existing) return { inserted: false, id: existing.id };
   }
   const files = (input.files ?? []).map(String).filter((s) => s.trim() !== "");
-  const id = await table.insert({
-    plan_key: planKey,
-    author_task: input.author_task?.trim() || "system",
-    kind: normalizeKind(input.kind),
-    files: files.length ? JSON.stringify(files) : null,
-    body,
-    wave: typeof input.wave === "number" ? input.wave : null,
-    dedupe_key: dedupe_key ?? null,
-    created_at: now(),
-  });
-  return { inserted: true, id };
+  try {
+    const id = await table.insert({
+      plan_key: planKey,
+      author_task: input.author_task?.trim() || "system",
+      kind: normalizeKind(input.kind),
+      files: files.length ? JSON.stringify(files) : null,
+      body,
+      wave: typeof input.wave === "number" ? input.wave : null,
+      dedupe_key: dedupe_key ?? null,
+      created_at: now(),
+    });
+    return { inserted: true, id };
+  } catch (err) {
+    // Idempotent write-back under concurrency: two POSTs sharing a dedupe_key can both miss the
+    // findOne pre-check above, then one loses the race on the UNIQUE (plan_key, dedupe_key) index.
+    // Convert that collision into a no-op by re-reading the winner's row, so a retry never 500s.
+    if (dedupe_key && isUniqueViolation(err)) {
+      const existing = await table.findOne({ plan_key: planKey, dedupe_key });
+      if (existing) return { inserted: false, id: existing.id };
+    }
+    throw err;
+  }
+}
+
+/** True when an error is a SQLite UNIQUE-constraint violation (however the driver surfaces it). */
+function isUniqueViolation(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const code = (err as { code?: unknown }).code;
+  if (code === "SQLITE_CONSTRAINT_UNIQUE" || code === "SQLITE_CONSTRAINT") return true;
+  const message = (err as { message?: unknown }).message;
+  return typeof message === "string" && /UNIQUE constraint failed/i.test(message);
 }

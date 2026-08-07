@@ -40,4 +40,7 @@ CREATE UNIQUE INDEX ux_plan_blackboard_dedupe
 
 -- List a plan's entries in write order (id asc), and map a capability token back to its plan.
 CREATE INDEX ix_plan_blackboard_plan ON plan_blackboard (plan_key, id);
-CREATE INDEX ix_plans_blackboard_token ON plans (blackboard_token);
+-- The token is a capability credential, so it must map back to exactly ONE plan. A partial UNIQUE
+-- index (NULLs excluded, so pre-migration plans without a token are unconstrained) enforces the
+-- one-token→one-plan invariant at the DB boundary, and doubles as the token→plan lookup index.
+CREATE UNIQUE INDEX ux_plans_blackboard_token ON plans (blackboard_token) WHERE blackboard_token IS NOT NULL;
