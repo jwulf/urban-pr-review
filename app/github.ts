@@ -348,6 +348,100 @@ export async function fetchPrFiles(
   return paths;
 }
 
+/** The PR's current base branch ref — the branch this PR would land *into*. `null` when no
+ * transport is usable (idle). Used by the dead-end-base guard (#60) so we never land a PR into a
+ * base that has itself already merged to the default branch. */
+export async function fetchPrBase(
+  repo: string,
+  number: number | string,
+  token: string,
+): Promise<string | null> {
+  if (await useGh()) {
+    const out = await runGh(["pr", "view", String(number), "--repo", repo, "--json", "baseRefName"]);
+    const j = JSON.parse(out) as { baseRefName?: string };
+    return j.baseRefName ?? null;
+  }
+  if (!token) return null;
+  const r = await fetch(`https://api.github.com/repos/${repo}/pulls/${number}`, {
+    headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
+  });
+  if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
+  const j = (await r.json()) as { base?: { ref?: string } };
+  return j.base?.ref ?? null;
+}
+
+const defaultBranchCache = new Map<string, { at: number; name: string | null }>();
+const DEFAULT_BRANCH_TTL_MS = 5 * 60_000;
+
+/** The repo's default branch (e.g. `main`), memoized per repo for 5 min. A PR that targets the
+ * default branch can never be a dead-end, so the guard short-circuits on it. `null` when no
+ * transport is usable. */
+export async function fetchDefaultBranch(repo: string, token: string): Promise<string | null> {
+  const hit = defaultBranchCache.get(repo);
+  if (hit && Date.now() - hit.at < DEFAULT_BRANCH_TTL_MS) return hit.name;
+  let name: string | null = null;
+  if (await useGh()) {
+    const out = await runGh(["repo", "view", repo, "--json", "defaultBranchRef"]);
+    const j = JSON.parse(out) as { defaultBranchRef?: { name?: string } };
+    name = j.defaultBranchRef?.name ?? null;
+  } else if (token) {
+    const r = await fetch(`https://api.github.com/repos/${repo}`, {
+      headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" },
+    });
+    if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
+    const j = (await r.json()) as { default_branch?: string };
+    name = j.default_branch ?? null;
+  } else {
+    return null; // no transport → leave the cache untouched so a later call can resolve it
+  }
+  defaultBranchCache.set(repo, { at: Date.now(), name });
+  return name;
+}
+
+/** Whether a branch has already *landed* — i.e. it is the head of a `MERGED` PR. Returns:
+ *   • `landed`  — a merged PR exists from this branch → the branch is a dead-end target
+ *   • `open`    — an open PR exists from it (still alive)
+ *   • `unknown` — no PR references it, or no transport (ambiguous → never treated as dead-end)
+ * The guard blocks a merge only on a positive `landed` signal, so a valid stacked merge is never
+ * wrongly held. */
+export async function baseBranchLanded(
+  repo: string,
+  branch: string,
+  token: string,
+): Promise<"landed" | "open" | "unknown"> {
+  if (await useGh()) {
+    const out = await runGh([
+      "pr",
+      "list",
+      "--repo",
+      repo,
+      "--head",
+      branch,
+      "--state",
+      "all",
+      "--json",
+      "state",
+      "--limit",
+      "20",
+    ]);
+    const arr = JSON.parse(out) as { state?: string }[];
+    if (arr.some((p) => (p.state ?? "").toUpperCase() === "MERGED")) return "landed";
+    if (arr.some((p) => (p.state ?? "").toUpperCase() === "OPEN")) return "open";
+    return "unknown";
+  }
+  if (!token) return "unknown";
+  const owner = repo.split("/")[0];
+  const r = await fetch(
+    `https://api.github.com/repos/${repo}/pulls?state=all&head=${encodeURIComponent(`${owner}:${branch}`)}&per_page=20`,
+    { headers: { authorization: `Bearer ${token}`, accept: "application/vnd.github+json" } },
+  );
+  if (!r.ok) throw new Error(`github ${r.status} ${r.statusText}`.trim());
+  const arr = (await r.json()) as { state?: string; merged_at?: string | null }[];
+  if (arr.some((p) => p.merged_at || (p.state ?? "").toUpperCase() === "MERGED")) return "landed";
+  if (arr.some((p) => (p.state ?? "").toLowerCase() === "open")) return "open";
+  return "unknown";
+}
+
 /** A settled landability verdict, or `waiting` when GitHub hasn't determined it yet (or is
  * still running checks / awaiting review). The poller only advances the process on a settled
  * verdict; `waiting` means re-poll later. */
