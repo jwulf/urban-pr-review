@@ -82,7 +82,7 @@
             ]
           },
           {
-            "label": "Complete",
+            "label": "Skipped",
             "filter": [{ "field": "status", "in": ["skipped"] }]
           },
           { "label": "All", "filter": [] }
