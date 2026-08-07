@@ -128,6 +128,13 @@ Deno.test("appendEntry + readBlackboard: append, encode files, read back in writ
   assertEquals(entries[1].author_task, "gap-8");
 });
 
+Deno.test("appendEntry: trims whitespace-padded file paths so stored/read values are clean", async () => {
+  const { data } = memData();
+  await appendEntry(data, "p", { kind: "file-claim", files: ["  engine/state.rs  ", "\tengine/mine.rs\n"], body: "claims" });
+  const [e] = await readBlackboard(data, "p");
+  assertEquals(e.files, ["engine/state.rs", "engine/mine.rs"], "paths stored trimmed, not whitespace-padded");
+});
+
 Deno.test("appendEntry: a missing author defaults to 'system' and kind is normalised", async () => {
   const { data } = memData();
   await appendEntry(data, "p", { body: "x", kind: "weird" as unknown });

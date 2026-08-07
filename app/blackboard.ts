@@ -113,7 +113,7 @@ Your blackboard endpoint (already scoped to this epic — no auth header needed)
 
     curl -s "${url}"
 
-Returns \`{ "planKey": "...", "cursor": <number>, "entries": [ { "author_task", "kind", "files", "body", "created_at" }, ... ] }\`.
+Returns \`{ "planKey": "...", "cursor": 0, "entries": [ { "id", "author_task", "kind", "files", "body", "wave", "created_at" }, ... ] }\` (\`cursor\` is the head entry id).
 If an entry overlaps your slice (same file, a changed contract/constraint), adapt: coordinate,
 rebase your plan, or if it genuinely blocks you, escalate with a \`question\` per your normal contract.
 
@@ -298,4 +298,5 @@ function isUniqueViolation(err: unknown): boolean {
   if (code === "SQLITE_CONSTRAINT_UNIQUE" || code === "SQLITE_CONSTRAINT") return true;
   const message = (err as { message?: unknown }).message;
   return typeof message === "string" && /UNIQUE constraint failed/i.test(message);
+}
 }
