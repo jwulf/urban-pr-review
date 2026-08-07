@@ -1,3 +1,10 @@
+# [0.25.0](https://github.com/jwulf/urban-pr-review/compare/v0.24.0...v0.25.0) (2026-08-07)
+
+
+### Features
+
+* rebrand to "Nano Workforce" with a shipped app icon ([#71](https://github.com/jwulf/urban-pr-review/issues/71)) ([3fb5386](https://github.com/jwulf/urban-pr-review/commit/3fb53863def6e7525401ddb0280a15ab9c81aae6)), closes [#638](https://github.com/jwulf/urban-pr-review/issues/638)
+
 # [0.24.0](https://github.com/jwulf/urban-pr-review/compare/v0.23.0...v0.24.0) (2026-08-07)
 
 
