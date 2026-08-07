@@ -117,6 +117,34 @@ graph is rejected and the whole plan falls back to running every task in paralle
 losing your ordering.) Prefer a small number of coarse, coherent tasks over many
 tiny ones. If the issue is genuinely a single unit of work, emit exactly one task.
 
+### Shared surface → a decomposition choice, not a merge problem
+
+Before you finalise the split, look for tasks that would **edit the same surface**
+— the same file, the same test scaffold/harness, the same schema or config, the
+same shared module. Such tasks are independent to *write* but collide on *merge*:
+each opens a green PR, but the second to land hits a conflict (or, worse, a
+**semantic** break its own CI never ran). Do **not** paper over this with a
+`dependsOn` edge whose only purpose is to serialise the landing — that needlessly
+serialises *implementation* that could have run in parallel, and is the opposite
+waste from the collision.
+
+Instead, resolve a shared surface at **decomposition** time, one of two ways:
+
+1. **Merge into one coarser task.** If two-or-more slices are really slices of *one
+   file's behaviour* (e.g. many cases appended to the same test scaffold), emit a
+   **single** coarser task that owns that surface end-to-end. One PR, no collision.
+2. **Scaffold-first wave-0 task.** If the shared surface is a common
+   harness/boilerplate the slices genuinely branch off, emit an explicit **wave-0
+   scaffold task** that lands that shared harness first, and make every sibling
+   that builds on it `dependsOn` the scaffold task. The siblings then branch off
+   *merged* scaffold and no longer collide on it. (This is the one case where a
+   `dependsOn` edge is right: the dependency is real — the siblings need the
+   scaffold's merged code — not a landing-order hack.)
+
+Choose (1) when the surface *is* the task; choose (2) when the surface is shared
+infrastructure several distinct tasks sit on top of. Reserve plain parallel tasks
+(no shared surface) for genuinely disjoint work.
+
 ## Output contract
 
 Write a JSON object of **result variables** to the file named by the

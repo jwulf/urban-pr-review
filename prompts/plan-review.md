@@ -30,7 +30,15 @@ decomposition **from the issues**, then test the plan against it.
 - **Cycle or dangling id.** A `dependsOn` references an unknown id, itself, or forms a cycle.
 - **Coverage gap.** A slice of the issue's stated scope has no task; or (for a QA plan) a subject
   has no verifying task, or a verifying task's entry condition points at a task that doesn't exist.
-- **Non-independent decomposition.** Two tasks will edit the same surface and collide on merge.
+- **Non-independent decomposition.** Two tasks will edit the **same surface** — the same file,
+  test scaffold/harness, schema, config, or shared module — so, though independent to write, they
+  **collide on merge**: the second PR to land hits a conflict, or a semantic break its own green CI
+  never exercised. Flag this, and demand a **remedy at decomposition time**, not a landing-order
+  hack: either (a) **merge** the colliding slices into one coarser task that owns the surface, or
+  (b) extract a **wave-0 scaffold task** that lands the shared surface first with the siblings
+  `dependsOn` it. Reject a `dependsOn` edge added purely to **serialise the landing** of otherwise
+  parallel work — that is not a fix, it just needlessly serialises implementation; name the pair,
+  the shared surface, and which of (a)/(b) the planner should apply.
 - **Non-self-contained prompt.** A task's `prompt` can't be executed without reasoning the planner
   kept to itself.
 - **Sequencing intent violated.** If the issues state an ordering (e.g. "audit the foundation
