@@ -612,7 +612,7 @@ async function pollMerges(data: DataLayer, engine: EngineClient, token: string) 
             if (ok && st.headRefOid) {
               await prs(data).update(prKey, { fresh_head_run_head: st.headRefOid, updated_at: now() });
             }
-            console.log(`[poller] fresh head run (${action}) ${ok ? "produced" : "skipped"} -> ${prKey}`);
+            console.log(`[poller] fresh head run (${action}) ${ok ? "requested" : "skipped"} -> ${prKey}`);
           }
         }
         continue; // GitHub still computing / checks pending
