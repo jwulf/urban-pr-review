@@ -144,7 +144,7 @@ function decodeFiles(raw: string | null): string[] {
   if (!raw) return [];
   try {
     const v = JSON.parse(raw);
-    return Array.isArray(v) ? v.map(String) : [];
+    return Array.isArray(v) ? v.map(String).map((s) => s.trim()).filter((s) => s !== "") : [];
   } catch {
     return [];
   }
@@ -190,7 +190,7 @@ export async function appendEntry(
     const existing = await table.findOne({ plan_key: planKey, dedupe_key });
     if (existing) return { inserted: false, id: existing.id };
   }
-  const files = (input.files ?? []).map(String).filter((s) => s.trim() !== "");
+  const files = (input.files ?? []).map(String).map((s) => s.trim()).filter((s) => s !== "");
   try {
     const id = await table.insert({
       plan_key: planKey,
