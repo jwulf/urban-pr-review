@@ -168,7 +168,7 @@ function toEntry(r: BlackboardRow): BlackboardEntry {
     id: r.id,
     author_task: r.author_task,
     kind: r.kind,
-    files: decodeFiles(r.files),
+    files: decodeFiles(r.files).map((x) => x.trim()).filter((x) => x !== ""),
     body: r.body,
     wave: r.wave,
     created_at: r.created_at,
@@ -241,7 +241,7 @@ export async function detectFileClaimConflicts(
   for (const r of rows.slice().sort((a, b) => a.id - b.id)) {
     if (beforeId != null && r.id >= beforeId) continue;
     if ((r.author_task || "") === me) continue;
-    for (const f of decodeFiles(r.files).map((x) => x.trim()).filter((x) => x !== "")) {
+    for (const f of new Set(decodeFiles(r.files).map((x) => x.trim()).filter((x) => x !== ""))) {
       if (want.has(f)) {
         out.push({ file: f, author_task: r.author_task, id: r.id, body: r.body, created_at: r.created_at });
       }
@@ -298,5 +298,4 @@ function isUniqueViolation(err: unknown): boolean {
   if (code === "SQLITE_CONSTRAINT_UNIQUE" || code === "SQLITE_CONSTRAINT") return true;
   const message = (err as { message?: unknown }).message;
   return typeof message === "string" && /UNIQUE constraint failed/i.test(message);
-}
 }
