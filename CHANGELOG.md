@@ -1,3 +1,10 @@
+# [0.19.0](https://github.com/jwulf/urban-pr-review/compare/v0.18.0...v0.19.0) (2026-08-07)
+
+
+### Features
+
+* **merge:** guard against landing a PR into a dead-end base branch ([#60](https://github.com/jwulf/urban-pr-review/issues/60)) ([#61](https://github.com/jwulf/urban-pr-review/issues/61)) ([e108598](https://github.com/jwulf/urban-pr-review/commit/e108598b1f46b1a0d85c0a4689adb25be301ef2c)), closes [#54](https://github.com/jwulf/urban-pr-review/issues/54)
+
 # [0.18.0](https://github.com/jwulf/urban-pr-review/compare/v0.17.0...v0.18.0) (2026-08-07)
 
 
