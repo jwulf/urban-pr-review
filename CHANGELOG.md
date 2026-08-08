@@ -1,3 +1,10 @@
+# [0.26.0](https://github.com/jwulf/urban-pr-review/compare/v0.25.0...v0.26.0) (2026-08-08)
+
+
+### Features
+
+* **cancel:** cooperative abandon check — a cancelled run makes no side effect ([#77](https://github.com/jwulf/urban-pr-review/issues/77)) ([11b0155](https://github.com/jwulf/urban-pr-review/commit/11b0155c0bd1ecadba7ac286317a2c5723a7d475)), closes [#76](https://github.com/jwulf/urban-pr-review/issues/76)
+
 # [0.25.0](https://github.com/jwulf/urban-pr-review/compare/v0.24.0...v0.25.0) (2026-08-07)
 
 
