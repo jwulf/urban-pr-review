@@ -19,6 +19,7 @@ import {
   requestCopilotReview,
 } from "./github.ts";
 import { planTaskDeps, planTasks, plans } from "./plan.ts";
+import { abandonUrl, mintAbandonToken, renderAbandonBrief } from "./abandon.ts";
 import { freshHeadRunAction, loadMergeProtocol } from "./mergeProtocol.ts";
 import { clampNudgeMinutes, reviewWaitTimeout } from "./reviewWait.ts";
 import { waveMergeTargets } from "./waves.ts";
@@ -125,6 +126,10 @@ interface PullRequest {
   // Merge-protocol liveness (012_merge_protocol_attempt.sql): head commit last nudged by the
   // frugal-CI fresh-head-run remedy. A rebase changes the head and therefore permits a new nudge.
   fresh_head_run_head: string | null;
+  // Cooperative abandon check (015_pr_abandon_token.sql, issue #76): the per-PR capability token a
+  // running agent curls (GET /hooks/abandon?token=…) to learn whether this run was cancelled before
+  // it performs a side effect. Minted at submit, reused across the convergence + merge instances.
+  abandon_token: string | null;
 }
 
 interface PrDependency {
@@ -237,6 +242,9 @@ export async function submitPr(
   await registerDependencies(data, parsed.prKey, [...depKeys]);
 
   const ts = now();
+  // Cooperative abandon check (#76): reuse the PR's existing capability token across re-runs (and
+  // the later merge instance), or mint one for a first submission.
+  const abandonToken = existing?.abandon_token ?? mintAbandonToken();
   if (existing) {
     // A prior run (cancelled, converged, or otherwise superseded) may have left an OPEN
     // escalation row plus the denormalised pointer on the PR. A fresh convergence run must not
@@ -262,6 +270,7 @@ export async function submitPr(
       // does not resurface a dead/stale question on the re-opened PR.
       open_escalation_id: null,
       open_escalation_question: null,
+      abandon_token: abandonToken,
       updated_at: ts,
     });
   } else {
@@ -273,10 +282,12 @@ export async function submitPr(
       title,
       status: "converging",
       current_round: 1,
+      abandon_token: abandonToken,
       created_at: ts,
       updated_at: ts,
     });
   }
+  const abUrl = abandonUrl(abandonToken);
   const { processInstanceKey } = await engine.createInstance({
     processDefinitionId: PROCESS_ID,
     variables: {
@@ -287,6 +298,10 @@ export async function submitPr(
       round: 1,
       maxRounds: clampRounds(maxRounds, MAX_ROUNDS),
       reviewWaitTimeout: REVIEW_WAIT_TIMEOUT,
+      // Cooperative abandon check (#76): the capability URL + the abort brief appended to the
+      // review-round agent's prompt, so it can stop before pushing if the run is cancelled.
+      abandonUrl: abUrl,
+      abandonBrief: renderAbandonBrief(abUrl),
     },
   });
   if (processInstanceKey != null) {
@@ -303,6 +318,14 @@ export async function startMerge(
   engine: EngineClient,
   pr: { repo: string; number: number; url: string; prKey: string; round: number },
 ) {
+  // Cooperative abandon check (#76): reuse the token minted at submit so the merge agents
+  // (fix-ci, rebase) share the PR's abandon URL; mint one if an older row predates the column.
+  const existing = await prs(data).get(pr.prKey);
+  const abandonToken = existing?.abandon_token ?? mintAbandonToken();
+  if (!existing?.abandon_token) {
+    await prs(data).update(pr.prKey, { abandon_token: abandonToken, updated_at: now() });
+  }
+  const abUrl = abandonUrl(abandonToken);
   const { processInstanceKey } = await engine.createInstance({
     processDefinitionId: MERGE_PROCESS_ID,
     variables: {
@@ -315,6 +338,8 @@ export async function startMerge(
       ciFixMax: MAX_CI_FIX_ROUNDS,
       rebaseRound: 0,
       rebaseMax: MAX_REBASE_ROUNDS,
+      abandonUrl: abUrl,
+      abandonBrief: renderAbandonBrief(abUrl),
     },
   });
   if (processInstanceKey != null) {

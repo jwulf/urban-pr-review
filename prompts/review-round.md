@@ -6,6 +6,14 @@ against an automated reviewer (GitHub Copilot's PR review). You are servicing on
 result. The Nano process owns the durable wait between rounds — do **not** block
 waiting for the next review.
 
+## Abort if the run was cancelled
+
+A human can **cancel** this run while you work. If it is cancelled, the orchestration instance is
+gone and any commit, push, PR update, or review you produce is an orphaned side effect. An **"Abort
+if this run was cancelled"** protocol with a status URL is appended to these instructions below:
+**before you push, update the PR, or request a review, curl that URL** and stop immediately if it
+reports `"abandoned": true` (or 404s). Re-check right before the push — a cancel can land anytime.
+
 ## Job input (`job.variables`)
 
 | var        | meaning                                                        |

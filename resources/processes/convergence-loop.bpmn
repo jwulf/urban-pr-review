@@ -81,6 +81,7 @@
           <zeebe:property name="io.nanobpm.dataEnvelope.out" value="PrReviewRoundOut" />
         </zeebe:properties>
         <zeebe:ioMapping>
+          <zeebe:input source="=(if (abandonBrief = null) then &#34;&#34; else abandonBrief)" target="appendPrompt" />
           <zeebe:output source="=null" target="answer" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>

@@ -211,7 +211,7 @@
           <zeebe:property name="io.nanobpm.dataEnvelope.out" value="FixCiOut" />
         </zeebe:properties>
         <zeebe:ioMapping>
-          <zeebe:input source="=(if (failingChecksList = null or failingChecksList = &#34;&#34;) then &#34;&#34; else &#34;&#10;&#10;Failing checks to make green:&#10;&#34; + failingChecksList)" target="appendPrompt" />
+          <zeebe:input source="=(if (failingChecksList = null or failingChecksList = &#34;&#34;) then &#34;&#34; else &#34;&#10;&#10;Failing checks to make green:&#10;&#34; + failingChecksList) + (if (abandonBrief = null) then &#34;&#34; else abandonBrief)" target="appendPrompt" />
           <zeebe:output source="=ciFixRound + 1" target="ciFixRound" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
@@ -239,6 +239,7 @@
           <zeebe:property name="io.nanobpm.dataEnvelope.out" value="RebaseOut" />
         </zeebe:properties>
         <zeebe:ioMapping>
+          <zeebe:input source="=(if (abandonBrief = null) then &#34;&#34; else abandonBrief)" target="appendPrompt" />
           <zeebe:output source="=rebaseRound + 1" target="rebaseRound" />
         </zeebe:ioMapping>
       </bpmn:extensionElements>
