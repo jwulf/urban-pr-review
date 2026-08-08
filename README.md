@@ -7,7 +7,7 @@ every resulting pull request to **review convergence** against an automated
 reviewer, and **merges** it — escalating to a human only when an agent is stuck or
 a round cap is hit.
 
-It is a [Nano](https://github.com/jwulf/nano-ide) **Urban app**: a set of durable
+It is a [Nano](https://nanobpm.io) **Urban app**: a set of durable
 BPMN processes (`resources/processes/*.bpmn`) executed by the Nano engine, with the
 orchestration graph — planning, implementation, review, and merge — modelled
 explicitly so the whole lifecycle survives restarts, latency, and failure.
