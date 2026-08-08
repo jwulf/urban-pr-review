@@ -89,14 +89,17 @@ an **orphaned side effect** on a run nobody is waiting for.
 **Before every irreversible action — before you \`git push\`, open or update a PR, request a review,
 or merge — check whether the run is still wanted:**
 
-    curl -s "${url}"
+    curl -fsS "${url}"
 
-It returns \`{ "prKey": "...", "status": "...", "abandoned": true|false }\`.
+On success it returns \`{ "prKey": "...", "status": "...", "abandoned": true|false }\`. The \`-f\` is
+important: it makes \`curl\` **exit non-zero on an HTTP error** (e.g. a 404 when the run has been torn
+down), instead of silently printing an error body with exit 0.
 
-- If \`"abandoned": true\` (or the request fails with a 404 — the run was torn down), **STOP
-  immediately**: make no commits, push nothing, open no PR, request no review. Leave the working
-  tree as-is and exit. A failure when you later try to complete the job is EXPECTED after a cancel —
-  do not treat it as an error to retry.
-- If \`"abandoned": false\`, proceed — but re-check right before the push, since a cancel can land at
-  any moment. Checking as late as possible keeps the window tiny.`;
+- **Abort** — make no commits, push nothing, open no PR, request no review — if EITHER the command
+  **fails** (non-zero exit: the run was cancelled/torn down or the endpoint is unreachable) OR the
+  JSON reports \`"abandoned": true\`. Leave the working tree as-is and exit. A failure when you later
+  try to complete the job is EXPECTED after a cancel — do not treat it as an error to retry.
+- **Proceed** only when the command **succeeds** AND reports \`"abandoned": false\` — and re-check
+  right before the push, since a cancel can land at any moment. Checking as late as possible keeps
+  the window tiny.`;
 }

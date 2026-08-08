@@ -13,8 +13,9 @@ wait and the retry budget; do **not** loop.
 
 A human can **cancel** this run while you work. If it is, the orchestration instance is gone and any
 force-push you produce is an orphaned side effect. An **"Abort if this run was cancelled"** protocol
-with a status URL is appended below: **before you push the rebased branch, curl that URL** and stop
-immediately if it reports `"abandoned": true` (or 404s). Re-check right before the push.
+with a status URL is appended below: **before you push the rebased branch, curl that URL** (with
+`-fsS`) and stop immediately if the check **fails** or reports `"abandoned": true`. Re-check right
+before the push.
 
 ## Job input (`job.variables`)
 

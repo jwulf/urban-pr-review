@@ -12,8 +12,9 @@ for CI to re-run.
 
 A human can **cancel** this run while you work. If it is, the orchestration instance is gone and any
 commit or push you produce is an orphaned side effect. An **"Abort if this run was cancelled"**
-protocol with a status URL is appended below: **before you push the fix, curl that URL** and stop
-immediately if it reports `"abandoned": true` (or 404s). Re-check right before the push.
+protocol with a status URL is appended below: **before you push the fix, curl that URL** (with
+`-fsS`) and stop immediately if the check **fails** or reports `"abandoned": true`. Re-check right
+before the push.
 
 ## Job input (`job.variables`)
 

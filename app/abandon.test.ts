@@ -65,7 +65,10 @@ Deno.test("renderAbandonBrief embeds the concrete URL and the stop contract", ()
   const brief = renderAbandonBrief("https://host/hooks/abandon?token=tok");
   assertEquals(brief.includes("https://host/hooks/abandon?token=tok"), true);
   assertEquals(brief.includes("abandoned"), true);
-  assertEquals(brief.includes("STOP"), true);
+  assertEquals(brief.includes("Abort"), true);
+  // Must use `curl -f` so a 404 (torn-down run) fails the command instead of exiting 0 with an
+  // error body the agent would parse as "not abandoned".
+  assertEquals(brief.includes("curl -fsS"), true);
 });
 
 Deno.test("prKeyForAbandonToken resolves a known token and rejects unknowns", async () => {
