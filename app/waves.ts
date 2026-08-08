@@ -1,4 +1,4 @@
-// urban-pr-review — plan levelizer (issue #20).
+// nano-workforce — plan levelizer (issue #20).
 //
 // The planner may emit tasks with an optional `dependsOn: [taskId, ...]` DAG.
 // This module turns that DAG into ordered **waves**: `wave(t) = 0` if the task has

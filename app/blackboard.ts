@@ -1,4 +1,4 @@
-// urban-pr-review — epic coordination blackboard (Tier 1, issues #51 / #49 D4).
+// nano-workforce — epic coordination blackboard (Tier 1, issues #51 / #49 D4).
 //
 // A per-plan advisory shared store. Implementer agents (`senior:feature`) READ it on dispatch and
 // WRITE to it during/after their work — "I now also touch state.rs", "constraint X changed

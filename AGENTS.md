@@ -6,9 +6,10 @@ processes; `README.md` covers setup, roles, and running.
 
 ## What this repo is
 
-`urban-pr-review` is an [Urban](https://github.com/jwulf/nano-ide) app (ADR 0055)
-that drives GitHub PRs to **review convergence** and then **merge**, and can take
-a whole issue and fan a fleet of agents out to implement it. It is a set of
+`nano-workforce` is an [Urban](https://github.com/jwulf/nano-ide) app (ADR 0055)
+— **Agent Graph Orchestration for Agentic SDLC**. It drives GitHub PRs to
+**review convergence** and then **merge**, and can take a whole issue and fan a
+fleet of agents out to implement it. It is a set of
 durable BPMN processes (`resources/processes/*.bpmn`) plus host glue
 (`app/`, `workers/`, `actions/`, `main.ts`) over the Urban runtime seams
 (`DataLayer`, `EngineClient`). The processes are executed by the **nanobpmn

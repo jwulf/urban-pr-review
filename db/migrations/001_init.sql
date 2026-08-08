@@ -1,4 +1,4 @@
--- urban-pr-review schema (SPEC §7). One row per PR under convergence, its rounds,
+-- nano-workforce schema (SPEC §7). One row per PR under convergence, its rounds,
 -- and any escalations raised mid-convergence.
 
 CREATE TABLE IF NOT EXISTS pull_requests (

@@ -1,6 +1,6 @@
 {
-  "name": "urban-pr-review",
-  "description": "Durable, multi-round GitHub PR convergence orchestrated by Nano.",
+  "name": "nano-workforce",
+  "description": "Nano Workforce — Agent Graph Orchestration for Agentic SDLC, orchestrated by Nano.",
   "main": "main.ts",
   "lang": "node",
   "app": "urban",

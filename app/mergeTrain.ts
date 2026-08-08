@@ -1,4 +1,4 @@
-// urban-pr-review — D6 merge-side lane serialization (issue #49).
+// nano-workforce — D6 merge-side lane serialization (issue #49).
 //
 // The D2 merge-exclusion graph groups tasks into landing lanes: tasks in the same lane can
 // implement concurrently but must merge serially. This pure planner chooses exactly one PR per

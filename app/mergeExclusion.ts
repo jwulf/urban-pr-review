@@ -1,4 +1,4 @@
-// urban-pr-review — the merge-exclusion graph + conflict-scan (D1/D2, issues #57 #58 / #49).
+// nano-workforce — the merge-exclusion graph + conflict-scan (D1/D2, issues #57 #58 / #49).
 //
 // The planner already models the DISPATCH-DAG (`plan_task_deps` → waves): edges that gate when a
 // task may *start*. This is the SECOND graph the retro (nano-bpm#614) exposed: **merge-exclusion**

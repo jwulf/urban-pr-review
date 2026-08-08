@@ -1,5 +1,5 @@
 // npm run upgrade (or `deno task upgrade`) — refresh THIS app's source from a newer
-// published pack of @nanobpm/urban-pr-review, WITHOUT touching your data.
+// published pack of @nanobpm/nano-workforce, WITHOUT touching your data.
 //
 // Why this exists: a Console project stamped from the example pack is a one-time
 // COPY (a snapshot/fork) — there is no built-in "update from template". This
@@ -24,7 +24,7 @@
 // Flags:
 //   --apply             write changes (default: dry-run preview)
 //   --version <v>       npm dist-tag or version to fetch (default: "latest")
-//   --package <name>    package to fetch (default: "@nanobpm/urban-pr-review")
+//   --package <name>    package to fetch (default: "@nanobpm/nano-workforce")
 //   --from <path>       use a local extracted dir OR a .tgz tarball as the source
 //                       (skips `npm pack`; --version/--package are ignored)
 //   --force             overlay even if the cwd doesn't look like this app
@@ -55,7 +55,7 @@ function parseArgs(argv: string[]): Args {
   const a: Args = {
     apply: false,
     version: "latest",
-    pkg: "@nanobpm/urban-pr-review",
+    pkg: "@nanobpm/nano-workforce",
     from: null,
     force: false,
   };

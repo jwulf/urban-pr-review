@@ -1,4 +1,4 @@
-// urban-pr-review — cooperative abandon check (issue #76).
+// nano-workforce — cooperative abandon check (issue #76).
 //
 // Cancelling a mid-flight convergence/merge run terminates the engine instance, but the external
 // `senior:*` agent servicing the current job keeps running and would still push a commit, open a
