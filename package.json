@@ -34,6 +34,7 @@
     "gen": "urban gen",
     "gen:check": "urban gen --check",
     "layout": "node --experimental-strip-types scripts/layout-bpmn.ts",
+    "layout:check": "node --experimental-strip-types scripts/layout-bpmn.ts --check",
     "dev": "urban dev",
     "compile": "deno task compile",
     "test": "deno test -A"

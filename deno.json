@@ -16,6 +16,7 @@
     "gen": "deno run -A @nanobpm/urban gen",
     "gen:check": "deno run -A @nanobpm/urban gen --check",
     "layout": "deno run -A scripts/layout-bpmn.ts",
+    "layout:check": "deno run -A scripts/layout-bpmn.ts --check",
     "dev": "deno run -A @nanobpm/urban dev",
     "compile": "deno compile --allow-net --allow-read --allow-write --allow-run=gh --allow-env -o dist/urban-pr-review main.ts",
     "test": "deno test -A"

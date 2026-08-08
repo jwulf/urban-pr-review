@@ -73,6 +73,11 @@ GENERATED, never hand-edited.**
 - Never hand-edit `<bpmndi:…>` — the semantic model is authoritative; a
   hand-tweaked diagram will be clobbered on the next layout and drifts from the
   model in the meantime.
+- **CI enforces DI freshness.** `npm run layout:check` (`scripts/layout-bpmn.ts
+  --check`) regenerates every diagram in memory and fails if a committed one is
+  stale. It runs in `.github/workflows/ci.yml`, so a flow change that forgets the
+  relayout **cannot merge**. Run `npm run layout` and commit the result whenever
+  the check flags a model.
 
 ## Engine capabilities (Zeebe parity — use them, don't work around them)
 
@@ -139,13 +144,15 @@ Match CI locally before pushing:
 ```bash
 npm run typecheck                                     # tsc --noEmit (Node)
 npm run check                                         # urban check (manifest validation)
+npm run layout:check                                  # BPMN diagram freshness (no drift)
 deno check main.ts 'workers/**/*.ts' 'actions/**/*.ts'  # Deno typecheck
 deno test -A                                          # unit tests (run with -A)
 ```
 
-CI (`.github/workflows/ci.yml`) gates the first three; `deno test -A` is the unit
-suite — run it locally on any `app/` change. `npm run layout <file.bpmn>` after
-any BPMN flow change.
+CI (`.github/workflows/ci.yml`) gates typecheck, `urban check`, `layout:check`,
+Deno typecheck, and the Deno test suite. Run `npm run layout <file.bpmn>` after
+any BPMN flow change and commit the regenerated diagram — the `layout:check`
+gate fails the build otherwise.
 
 ## Repo conventions
 

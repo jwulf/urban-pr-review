@@ -31,6 +31,13 @@ jobs:
       - name: Validate manifest (urban check)
         run: npm run check
 
+      # DI-freshness gate: the `.bpmn` semantic model is authoritative and the
+      # `bpmndi:BPMNDiagram` is GENERATED (scripts/layout-bpmn.ts → layoutBpmn). This regenerates
+      # the DI in memory and fails if any committed diagram is stale — i.e. a flow was changed
+      # without re-running `npm run layout`. Keeps the diagram from drifting off the model.
+      - name: Check BPMN diagram freshness (layout)
+        run: npm run layout:check
+
       - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
