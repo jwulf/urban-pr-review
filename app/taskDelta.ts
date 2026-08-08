@@ -1,4 +1,4 @@
-// urban-pr-review — structured scope/impl-change report from implementers (D5, issue #55 / #49).
+// nano-workforce — structured scope/impl-change report from implementers (D5, issue #55 / #49).
 //
 // The implementer result contract (prompts/feature.md) can carry an optional `delta`: a machine-
 // readable record of how a slice's implementation diverged from its brief — a changed contract, a

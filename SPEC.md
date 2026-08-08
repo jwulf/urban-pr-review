@@ -1,4 +1,4 @@
-# urban-pr-review — specification (draft)
+# nano-workforce — specification (draft)
 
 A Nano **Urban app** that drives GitHub pull requests to convergence against an
 automated reviewer (e.g. GitHub Copilot's PR review), one durable, multi-round
@@ -54,7 +54,7 @@ surface are proposed and open for adjustment.
 ## 3. Repository layout
 
 ```
-urban-pr-review/
+nano-workforce/
   nano.app.json               # manifest (ADR 0027): sqlite data, domain types, submit webhook trigger
   main.ts                     # Deno entrypoint: deploy + start workers + Deno.serve (page runtime + action overrides + poller)
   deno.json

@@ -1,9 +1,9 @@
 {
   "$schema": "https://nanobpm.io/spec-app/nano-app.schema.json",
   "schemaVersion": 1,
-  "id": "urban-pr-review",
+  "id": "nano-workforce",
   "name": "Nano Workforce",
-  "codename": "urban-pr-review",
+  "codename": "nano-workforce",
   "models": {
     "processes": [
       "resources/processes/*.bpmn"

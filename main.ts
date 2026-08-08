@@ -1,4 +1,4 @@
-// urban-pr-review — Urban App entrypoint (ADR 0055).
+// nano-workforce — Urban App entrypoint (ADR 0055).
 //
 // The whole app is declared in `nano.app.json` (models, sqlite datasource, app-hosted record
 // workers, the schema-driven pages surface, and the action overrides) and materialized by the
@@ -68,4 +68,4 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => void drainAndExit());
 }
 
-console.log(`urban-pr-review serving on :${PORT} (poll ${POLL_MS}ms, maxRounds ${MAX_ROUNDS})`);
+console.log(`nano-workforce serving on :${PORT} (poll ${POLL_MS}ms, maxRounds ${MAX_ROUNDS})`);

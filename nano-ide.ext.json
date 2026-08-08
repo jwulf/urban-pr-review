@@ -1,7 +1,7 @@
 {
-  "id": "urban-pr-review",
+  "id": "nano-workforce",
   "kind": "example",
-  "displayName": "Urban PR Review — model-first",
+  "displayName": "Nano Workforce",
   "appDir": ".",
-  "summary": "Model-first Nano Urban app: a durable multi-round loop that drives a GitHub PR to convergence against an automated reviewer, escalating to a human when the reviewer is stuck or a round cap is hit. Reference companion to the code-first (defineFlow) variant."
+  "summary": "Agent Graph Orchestration for Agentic SDLC: durable BPMN processes that coordinate a graph of AI agents across the software delivery lifecycle — planning and fanning a fleet of agents out to implement an issue, driving each pull request to review convergence, and merging, escalating to a human when an agent is stuck or a round cap is hit."
 }

@@ -1,4 +1,4 @@
-// urban-pr-review — planning fan-out logic (issue #14).
+// nano-workforce — planning fan-out logic (issue #14).
 //
 // A planning agent (`senior:plan`) decomposes an issue into a list of tasks; the
 // `plan-fanout` process then fans those tasks out over a parallel multi-instance

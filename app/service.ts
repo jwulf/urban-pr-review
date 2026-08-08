@@ -1,4 +1,4 @@
-// urban-pr-review — the app's business logic over the Urban runtime seams (ADR 0055).
+// nano-workforce — the app's business logic over the Urban runtime seams (ADR 0055).
 //
 // The action handlers (`actions/*.ts`) and the review-ready poller (`main.ts`) both call
 // these functions. Actions receive `app.data` (the typed datasource gateway) and

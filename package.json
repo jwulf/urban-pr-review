@@ -1,7 +1,7 @@
 {
-  "name": "@nanobpm/urban-pr-review",
+  "name": "@nanobpm/nano-workforce",
   "version": "0.26.0",
-  "description": "Nano Urban app that drives GitHub pull requests to convergence against an automated reviewer, one durable multi-round loop per PR.",
+  "description": "Nano Workforce — an Agent Graph Orchestration application for Agentic SDLC: durable BPMN processes that coordinate a graph of AI agents across the software delivery lifecycle.",
   "type": "module",
   "main": "main.ts",
   "engines": {
@@ -9,13 +9,13 @@
   },
   "author": "Josh Wulf <josh.wulf@camunda.com>",
   "license": "Apache-2.0",
-  "homepage": "https://github.com/jwulf/urban-pr-review#readme",
+  "homepage": "https://github.com/nanobpm/nano-workforce#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jwulf/urban-pr-review.git"
+    "url": "git+https://github.com/nanobpm/nano-workforce.git"
   },
   "bugs": {
-    "url": "https://github.com/jwulf/urban-pr-review/issues"
+    "url": "https://github.com/nanobpm/nano-workforce/issues"
   },
   "keywords": [
     "nano-ide-ext",
@@ -34,6 +34,7 @@
     "gen": "urban gen",
     "gen:check": "urban gen --check",
     "layout": "node --experimental-strip-types scripts/layout-bpmn.ts",
+    "layout:check": "node --experimental-strip-types scripts/layout-bpmn.ts --check",
     "dev": "urban dev",
     "compile": "deno task compile",
     "test": "deno test -A"
